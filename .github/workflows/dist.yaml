@@ -31,6 +31,10 @@ jobs:
           cd out
           zip -r ../studio-ui-dist.zip .
 
+      - name: ls
+        run: |
+          ls
+
       - name: Read version from package.json
         id: pkg
         run: |
