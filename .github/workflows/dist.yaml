@@ -49,7 +49,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          SOURCE_DIR: ./studio-ui-dist.zip
+          SOURCE_DIR: studio-ui-dist.zip
           DEST_DIR: surfpool-studio-ui/v${{ steps.pkg.outputs.VERSION }}
 
       - name: Upload to S3 (latest)
@@ -61,5 +61,5 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          SOURCE_DIR: ./studio-ui-dist.zip
+          SOURCE_DIR: studio-ui-dist.zip
           DEST_DIR: surfpool-studio-ui/latest
