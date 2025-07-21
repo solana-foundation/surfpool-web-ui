@@ -26,6 +26,11 @@ jobs:
         run: |
           npm run build
 
+      - name: Zip dist folder
+        run: |
+          cd out
+          zip -r ../studio-ui-dist.zip .
+
       - name: Read version from package.json
         id: pkg
         run: |
