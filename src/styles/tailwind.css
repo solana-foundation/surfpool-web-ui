@@ -40,3 +40,9 @@
 .hex-grid span[class*="border-green-500"]::before {
   background-color: #22c55e; /* green-500 */
 }
+
+@layer base {
+  html.dark {
+    color-scheme: dark;
+  }
+}
