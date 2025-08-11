@@ -52,12 +52,12 @@ export function LabeledLink({ endpoint, className = '' }: LabeledLinkProps) {
               outline
               onClick={() => copyToClipboard(endpoint.url, `query-${endpoint.name}`)}
               aria-label={`Copy query endpoint for ${endpoint.name}`}
-              className="flex h-[28px] w-[28px] items-center justify-center"
-            >
+              className="flex h-[28px] w-[28px] items-center justify-center border border-zinc-700"
+           >
               {copiedStates[`query-${endpoint.name}`] ? (
-                <CheckIcon className="h-4 w-4 text-green-500" />
+                <CheckIcon data-slot="icon" className="h-4 w-4 text-green-500" />
               ) : (
-                <ClipboardIcon className="h-4 w-4" />
+                <ClipboardIcon data-slot="icon" className="h-4 w-4 text-zinc-300" />
               )}
             </Button>
           </div>

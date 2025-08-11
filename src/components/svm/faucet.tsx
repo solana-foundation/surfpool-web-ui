@@ -301,16 +301,16 @@ export default function Faucet() {
   };
 
   return (
-    <div className="faucet relative z-10 mx-auto mt-3 flex min-h-[340px] w-full items-center justify-center rounded-xl bg-zinc-800 pb-5 shadow-lg md:mt-0">
+    <div className="faucet relative z-10 mx-auto mt-3 flex min-h-[340px] w-full items-center justify-center rounded-xl bg-zinc-800 text-white pb-5 shadow-lg md:mt-0">
       <div className="flex flex-col items-center space-y-2 pt-1">
         {/* Box 1: Tokens needed */}
         <Field className="w-full pl-4 uppercase">
-          <Label className="text-sm sm:text-sm md:text-sm lg:text-sm">Faucet</Label>
+          <Label className="text-sm sm:text-sm md:text-sm lg:text-sm text-white">Faucet</Label>
         </Field>
 
         {tokenFundingRequests.map((tokenFundingRequest, index) => (
           <div key={index} className="flex flex-col items-center pr-1 pl-1">
-            <Field className="rounded-xl bg-zinc-900 p-4">
+            <Field className="rounded-xl bg-zinc-900 p-4 text-white">
               <Label className="text-lg sm:text-lg md:text-lg lg:text-lg">Amount</Label>
               <div className="flex items-center space-x-2">
                 <input
@@ -318,7 +318,7 @@ export default function Faucet() {
                   type="text"
                   placeholder="0"
                   value={inputValues[index] || ''}
-                  className="w-full border-none bg-transparent text-left !text-4xl focus:outline-none sm:text-4xl md:text-4xl lg:text-4xl"
+                  className="w-full border-none bg-transparent text-left !text-4xl text-white placeholder-zinc-400 focus:outline-none sm:text-4xl md:text-4xl lg:text-4xl"
                   onChange={(e) => handleTokenFundingRequestChange(e, index)}
                 />
                 <div
@@ -330,7 +330,7 @@ export default function Faucet() {
                     alt={tokenFundingRequest.token.ticker}
                     className="mr-2 h-8 w-8 rounded-full object-cover"
                   />
-                  <span className="mr-5 flex-grow text-right">{tokenFundingRequest.token.ticker}</span>
+                  <span className="mr-5 flex-grow text-right text-white">{tokenFundingRequest.token.ticker}</span>
                   <ChevronDownIcon className="h-4 w-4" />
                 </div>
               </div>
@@ -345,19 +345,19 @@ export default function Faucet() {
           <PlusIcon className="h-6 w-6" />
         </div>
 
-        <Field className="w-full pt-4 pl-4 uppercase">
+            <Field className="w-full pt-4 pl-4 uppercase text-white">
           <Label className="sm:text-sm md:text-sm lg:text-sm">Recipients</Label>
         </Field>
 
         <div className="mb-6 w-full">
           {reccipients.map((reccipient, index) => (
             <div key={index} className="relative flex w-full flex-col items-center pt-1 pr-1 pl-1">
-              <Field className="w-full rounded-xl bg-zinc-900 p-4 pt-5 pb-5">
+              <Field className="w-full rounded-xl bg-zinc-900 p-4 pt-5 pb-5 text-white">
                 <div className="flex w-full items-center space-x-2">
                   <input
                     type="text"
                     placeholder="ABAq2R9gSpDDGguQxBk4u13s4ZYW6zbwKVBx15mCMG8"
-                    className="w-full border-none bg-transparent text-left focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
+                    className="w-full border-none bg-transparent text-left text-white placeholder-zinc-400 focus:outline-none sm:text-[12px] md:text-[12px] lg:text-[12px]"
                     value={reccipient.address}
                     onChange={(e) => {
                       const newRecipients = [...reccipients];

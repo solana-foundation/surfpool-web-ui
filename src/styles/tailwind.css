@@ -5,6 +5,16 @@
   --font-sans--font-feature-settings: 'cv11';
 }
 
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  html, body {
+    background-color: #0a0a0a;
+  }
+}
+
 /* Hex grid styling - adds padding inside hex byte boxes */
 .hex-grid {
   display: inline-block;
@@ -41,8 +51,4 @@
   background-color: #22c55e; /* green-500 */
 }
 
-@layer base {
-  html.dark {
-    color-scheme: dark;
-  }
-}
+
