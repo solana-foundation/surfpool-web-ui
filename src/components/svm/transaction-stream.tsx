@@ -2468,11 +2468,7 @@ export default function TransactionStream({
                         <span className="font-mono font-bold text-white">{tx.slot}</span>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="space-y-1 text-xs text-gray-400">
-                    {tx.meta?.err && <div className="text-red-400">Error: {String(tx.meta.err)}</div>}
-                  </div>
+                  </div> 
                 </div>
               );
             })
@@ -2572,15 +2568,6 @@ export default function TransactionStream({
                   </div>
                 </div>
               )}
-
-              {/* Error Details */}
-              {selectedTransaction.meta?.err && (
-                <div className="rounded-lg border border-red-500/30 bg-red-900/20 p-4">
-                  <div className="mb-2 text-xs text-red-400">Error Details</div>
-                  <div className="text-sm text-red-300">{String(selectedTransaction.meta.err)}</div>
-                </div>
-              )}
-
               {/* Transaction Profile - New Detailed View */}
               {transactionProfile && (
                 <>

@@ -92,19 +92,6 @@ export function useTransactionStream(options: TransactionStreamOptions = {}) {
     
     // Mark signature as processed
     processedSignaturesRef.current.add(signature);
-    
-    // If transaction has an error, just update stats
-    if (err) {
-      console.log('❌ Transaction failed:', signature, err);
-      setStats(prev => ({
-        ...prev,
-        totalReceived: prev.totalReceived + 1,
-        failed: prev.failed + 1,
-        lastUpdate: new Date()
-      }));
-      return;
-    }
-    
     // Fetch full transaction details
     console.log('🔄 Fetching transaction details for signature:', signature);
     await fetchTransactionDetails(signature);
