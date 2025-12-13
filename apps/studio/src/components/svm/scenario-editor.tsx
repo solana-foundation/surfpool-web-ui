@@ -1,6 +1,5 @@
 'use client';
 
-import { Switch } from '@surfpool/ui';
 import { useAppConfig } from '@/hooks/use-app-config';
 import {
   ArrowDownTrayIcon,
@@ -13,6 +12,7 @@ import {
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
+import { Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
 import TransactionInspector from './transaction-inspector';
@@ -758,7 +758,7 @@ export default function ScenarioEditor({
     }
   };
 
-  const handlePlay = async () => {
+  const buildScenario = () => {
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
@@ -825,7 +825,11 @@ export default function ScenarioEditor({
       overrides,
       tags: [],
     };
+    return scenario;
+  };
 
+  const handlePlay = async () => {
+    const scenario = buildScenario();
     // Register scenario with surfnet
     try {
       console.log('📤 Registering scenario:', scenario);
@@ -917,17 +921,25 @@ export default function ScenarioEditor({
     setCurrentPlaybackSlot(0);
   };
 
-  const exportSnapshot = async () => {
+  const snapshotScenario = async () => {
+    const scenario = buildScenario();
+
+    // Call surfnet_exportSnapshot RPC
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
           method: 'surfnet_exportSnapshot',
+          params: [
+            {
+              scope: {
+                scenario: scenario,
+              },
+            },
+          ],
         }),
       });
 
@@ -993,285 +1005,289 @@ export default function ScenarioEditor({
         {/* Vertical cursor line - Edit mode only */}
         {mode === 'edit' && mouseX !== null && (
           <div
-            className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-yellow-500/30"
+            className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-yellow-500/30"
             style={{ left: `${mouseX}px` }}
           />
         )}
 
         {/* Timeline */}
-        <div className={`relative flex min-h-full items-start pt-12 pb-64 ${mode === 'play' ? 'justify-center' : 'justify-start pl-12'}`}>
+        <div
+          className={`relative flex min-h-full items-start pb-64 pt-12 ${mode === 'play' ? 'justify-center' : 'justify-start pl-12'}`}
+        >
           <div className={mode === 'play' ? 'relative min-h-[600px]' : 'flex items-start gap-12'}>
             <AnimatePresence mode="popLayout">
-            {slots.map((slot, index) => {
-              // In play mode, determine slot visibility and state
-              const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
-              const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
-              const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
-              const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot;
+              {slots.map((slot, index) => {
+                // In play mode, determine slot visibility and state
+                const isCurrentSlot = mode === 'play' && index === currentPlaybackSlot;
+                const isPreviousSlot = mode === 'play' && index === currentPlaybackSlot - 1;
+                const isNextSlot = mode === 'play' && index === currentPlaybackSlot + 1;
+                const shouldExpand = (selectedSlotId === slot.id && mode === 'edit') || isCurrentSlot;
 
-              // In play mode, only show previous, current, and next slots
-              if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
-                return null;
-              }
+                // In play mode, only show previous, current, and next slots
+                if (mode === 'play' && !isPreviousSlot && !isCurrentSlot && !isNextSlot) {
+                  return null;
+                }
 
-              // Calculate position for play mode carousel
-              let playModePosition = 0;
-              if (mode === 'play') {
-                if (isPreviousSlot) playModePosition = -400; // Previous slot offset to the left
-                if (isCurrentSlot) playModePosition = 0; // Current slot centered
-                if (isNextSlot) playModePosition = 400; // Next slot offset to the right
-              }
+                // Calculate position for play mode carousel
+                let playModePosition = 0;
+                if (mode === 'play') {
+                  if (isPreviousSlot) playModePosition = -400; // Previous slot offset to the left
+                  if (isCurrentSlot) playModePosition = 0; // Current slot centered
+                  if (isNextSlot) playModePosition = 400; // Next slot offset to the right
+                }
 
-              return (
-                <motion.div
-                  key={slot.id}
-                  className="group/slot-wrapper flex"
-                  style={mode === 'play' ? { position: 'absolute', left: '50%' } : {}}
-                  initial={
-                    mode === 'play' && !hasAnimated.has(slot.id)
-                      ? { x: 400 - (shouldExpand ? 150 : 40) }
-                      : false
-                  }
-                  animate={mode === 'play' ? { x: playModePosition - (shouldExpand ? 150 : 40) } : { x: 0 }}
-                  transition={{
-                    x: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
-                  }}
-                >
+                return (
                   <motion.div
-                    layout={mode !== 'play'}
+                    key={slot.id}
+                    className="group/slot-wrapper flex"
+                    style={mode === 'play' ? { position: 'absolute', left: '50%' } : {}}
                     initial={
-                      hasAnimated.has(slot.id)
-                        ? false
-                        : mode === 'play' && (isCurrentSlot || isNextSlot)
-                          ? { opacity: 0, scale: 0.85 }
-                          : { opacity: 0, scale: 0.9 }
+                      mode === 'play' && !hasAnimated.has(slot.id) ? { x: 400 - (shouldExpand ? 150 : 40) } : false
                     }
-                    animate={{
-                      opacity: isPreviousSlot || isNextSlot ? 0.3 : 1,
-                      scale: isPreviousSlot || isNextSlot ? 0.85 : 1,
-                      filter: isPreviousSlot || isNextSlot ? 'blur(2px)' : 'blur(0px)',
-                    }}
-                    exit={{ opacity: 0, scale: 0.85 }}
+                    animate={mode === 'play' ? { x: playModePosition - (shouldExpand ? 150 : 40) } : { x: 0 }}
                     transition={{
-                      layout: { type: 'spring', stiffness: 350, damping: 30 },
-                      opacity: { duration: 0.5, ease: 'easeInOut' },
-                      scale: { duration: 0.5, ease: 'easeInOut' },
-                      filter: { duration: 0.5 },
+                      x: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
                     }}
-                    className="flex flex-col gap-3"
                   >
-                    {/* Slot Height Label */}
-                    <div className="flex items-center justify-center">
-                      <span className="font-mono text-sm text-zinc-400">{slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}</span>
-                    </div>
-
-                    {/* Slot Card */}
                     <motion.div
-                      className="group relative flex-shrink-0"
+                      layout={mode !== 'play'}
+                      initial={
+                        hasAnimated.has(slot.id)
+                          ? false
+                          : mode === 'play' && (isCurrentSlot || isNextSlot)
+                            ? { opacity: 0, scale: 0.85 }
+                            : { opacity: 0, scale: 0.9 }
+                      }
                       animate={{
-                        width: shouldExpand ? 300 : 80,
+                        opacity: isPreviousSlot || isNextSlot ? 0.3 : 1,
+                        scale: isPreviousSlot || isNextSlot ? 0.85 : 1,
+                        filter: isPreviousSlot || isNextSlot ? 'blur(2px)' : 'blur(0px)',
                       }}
+                      exit={{ opacity: 0, scale: 0.85 }}
                       transition={{
-                        width: { duration: 0.35, ease: 'easeInOut' },
+                        layout: { type: 'spring', stiffness: 350, damping: 30 },
+                        opacity: { duration: 0.5, ease: 'easeInOut' },
+                        scale: { duration: 0.5, ease: 'easeInOut' },
+                        filter: { duration: 0.5 },
                       }}
+                      className="flex flex-col gap-3"
                     >
-                      <div
-                        className={`cursor-pointer rounded-lg border-2 p-6 transition-all overflow-hidden ${
-                          // Play mode styling - current slot
-                          mode === 'play' && isCurrentSlot
-                            ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
-                            : // Play mode styling - previous/next slots (dimmed)
-                              mode === 'play' && (isPreviousSlot || isNextSlot)
-                              ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
-                              : // Edit mode styling
-                                selectedSlotId === slot.id && mode === 'edit'
-                                ? 'min-h-[450px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
-                                : // Default styling
-                                  'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (mode === 'read') {
-                            setMode('edit');
-                          }
-                          if (mode !== 'play') {
-                            setSelectedSlotId(slot.id);
-                          }
-                        }}
-                      >
-                        <AnimatePresence mode="wait">
-                        <motion.div
-                          key={shouldExpand ? 'expanded' : 'collapsed'}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.2, delay: shouldExpand ? 0.2 : 0 }}
-                        >
-                        {shouldExpand ? (
-                          <>
-                            {/* Actions in this slot - Expanded View */}
-                            {slot.actions.length === 0 ? (
-                              <div className="flex items-center gap-3 rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 p-3">
-                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700"></div>
-                                <div className="flex-1">
-                                  <div className="text-sm text-zinc-500">No overrides yet</div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {slot.actions.map((action, actionIndex) => {
-                                  const localIconMap: Record<string, string> = {
-                                    pyth: '/assets/pyth.svg',
-                                    switchboard: '/assets/switchboard.svg',
-                                    jupiter: '/assets/jupiter.svg',
-                                    raydium: '/assets/raydium.svg',
-                                    whirlpool: '/assets/whirlpool.svg',
-                                    drift: '/assets/drift.svg',
-                                    kamino: '/assets/kamino.svg',
-                                  };
-                                  const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
-
-                                  return (
-                                    <div
-                                      key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
-                                      className="relative flex cursor-pointer items-center gap-3 rounded-md border border-zinc-700 bg-zinc-800 p-3 transition-colors hover:border-yellow-500 hover:bg-zinc-700"
-                                      onClick={async () => {
-                                        if (mode === 'edit' && selectedSlotId === slot.id) {
-                                          setEditingAction({ slotId: slot.id, actionIndex });
-
-                                          // Load the action's protocol and set it as selected
-                                          const protocol = protocols.find((p) => p.id === action.protocolId);
-                                          if (protocol) {
-                                            setSelectedProtocol(protocol);
-
-                                            // Find the specific action within the protocol
-                                            const foundAction = protocol.actions.find((a) => a.id === action.actionId);
-                                            if (foundAction) {
-                                              setSelectedAction(foundAction);
-                                              // Fetch account data for this action
-                                              await handleActionSelect(foundAction);
-
-                                              // Restore the overrides and modified fields after loading default data
-                                              if (action.overrides) {
-                                                setAccountData(action.overrides);
-                                              }
-                                              if (action.modifiedFields) {
-                                                setModifiedFields(new Set(action.modifiedFields));
-                                              }
-                                              if (action.fetchBeforeUse !== undefined) {
-                                                setFetchBeforeUse(action.fetchBeforeUse);
-                                              }
-                                            }
-                                          }
-
-                                          setShowProtocolPanel(true);
-                                        }
-                                      }}
-                                    >
-                                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-zinc-900 p-1">
-                                        <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
-                                      </div>
-                                      <div className="flex-1">
-                                        <div className="text-sm font-medium text-zinc-100">{action.action}</div>
-                                        <div className="text-xs text-zinc-400">{action.protocol}</div>
-                                      </div>
-                                      {/* Delete button - only in edit mode when slot is selected */}
-                                      {mode === 'edit' && selectedSlotId === slot.id && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            deleteActionFromSlot(slot.id, actionIndex);
-                                          }}
-                                          className="absolute right-2 bottom-2 text-zinc-500 transition-colors hover:text-zinc-300"
-                                          title="Delete action"
-                                        >
-                                          <TrashIcon className="h-4 w-4" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {/* Actions in this slot - Collapsed Icon View */}
-                            {slot.actions.length === 0 ? (
-                              <div className="flex flex-col items-center gap-2 pt-2">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30"></div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2 pt-2">
-                                {slot.actions.map((action, actionIndex) => {
-                                  const localIconMap: Record<string, string> = {
-                                    pyth: '/assets/pyth.svg',
-                                    switchboard: '/assets/switchboard.svg',
-                                    jupiter: '/assets/jupiter.svg',
-                                    raydium: '/assets/raydium.svg',
-                                    whirlpool: '/assets/whirlpool.svg',
-                                    drift: '/assets/drift.svg',
-                                    kamino: '/assets/kamino.svg',
-                                  };
-                                  const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
-
-                                  return (
-                                    <div
-                                      key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
-                                      className="flex h-12 w-12 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 p-1"
-                                      title={`${action.protocol}: ${action.action}`}
-                                    >
-                                      <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        </motion.div>
-                        </AnimatePresence>
+                      {/* Slot Height Label */}
+                      <div className="flex items-center justify-center">
+                        <span className="font-mono text-sm text-zinc-400">
+                          {slots.length < 5 ? `Slot ${slot.height + 1}` : `${slot.height + 1}`}
+                        </span>
                       </div>
 
-                      {/* Delete Button - only shown when slot is selected and in Edit mode */}
-                      {mode === 'edit' && slots.length > 1 && selectedSlotId === slot.id && (
-                        <button
+                      {/* Slot Card */}
+                      <motion.div
+                        className="group relative flex-shrink-0"
+                        animate={{
+                          width: shouldExpand ? 300 : 80,
+                        }}
+                        transition={{
+                          width: { duration: 0.35, ease: 'easeInOut' },
+                        }}
+                      >
+                        <div
+                          className={`cursor-pointer overflow-hidden rounded-lg border-2 p-6 transition-all ${
+                            // Play mode styling - current slot
+                            mode === 'play' && isCurrentSlot
+                              ? 'min-h-[450px] border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20'
+                              : // Play mode styling - previous/next slots (dimmed)
+                                mode === 'play' && (isPreviousSlot || isNextSlot)
+                                ? 'min-h-[280px] border-zinc-700 bg-zinc-900'
+                                : // Edit mode styling
+                                  selectedSlotId === slot.id && mode === 'edit'
+                                  ? 'min-h-[450px] border-yellow-500 bg-zinc-900 shadow-lg shadow-yellow-500/20'
+                                  : // Default styling
+                                    'min-h-[280px] border-zinc-700 bg-zinc-900 hover:border-zinc-600'
+                          }`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteSlot(slot.id);
+                            if (mode === 'read') {
+                              setMode('edit');
+                            }
+                            if (mode !== 'play') {
+                              setSelectedSlotId(slot.id);
+                            }
                           }}
-                          className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-all hover:scale-110 hover:bg-red-600"
-                          title="Delete slot"
                         >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      )}
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={shouldExpand ? 'expanded' : 'collapsed'}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.2, delay: shouldExpand ? 0.2 : 0 }}
+                            >
+                              {shouldExpand ? (
+                                <>
+                                  {/* Actions in this slot - Expanded View */}
+                                  {slot.actions.length === 0 ? (
+                                    <div className="flex items-center gap-3 rounded-md border border-dashed border-zinc-700 bg-zinc-800/30 p-3">
+                                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-700"></div>
+                                      <div className="flex-1">
+                                        <div className="text-sm text-zinc-500">No overrides yet</div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {slot.actions.map((action, actionIndex) => {
+                                        const localIconMap: Record<string, string> = {
+                                          pyth: '/assets/pyth.svg',
+                                          switchboard: '/assets/switchboard.svg',
+                                          jupiter: '/assets/jupiter.svg',
+                                          raydium: '/assets/raydium.svg',
+                                          whirlpool: '/assets/whirlpool.svg',
+                                          drift: '/assets/drift.svg',
+                                          kamino: '/assets/kamino.svg',
+                                        };
+                                        const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
+
+                                        return (
+                                          <div
+                                            key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
+                                            className="relative flex cursor-pointer items-center gap-3 rounded-md border border-zinc-700 bg-zinc-800 p-3 transition-colors hover:border-yellow-500 hover:bg-zinc-700"
+                                            onClick={async () => {
+                                              if (mode === 'edit' && selectedSlotId === slot.id) {
+                                                setEditingAction({ slotId: slot.id, actionIndex });
+
+                                                // Load the action's protocol and set it as selected
+                                                const protocol = protocols.find((p) => p.id === action.protocolId);
+                                                if (protocol) {
+                                                  setSelectedProtocol(protocol);
+
+                                                  // Find the specific action within the protocol
+                                                  const foundAction = protocol.actions.find(
+                                                    (a) => a.id === action.actionId
+                                                  );
+                                                  if (foundAction) {
+                                                    setSelectedAction(foundAction);
+                                                    // Fetch account data for this action
+                                                    await handleActionSelect(foundAction);
+
+                                                    // Restore the overrides and modified fields after loading default data
+                                                    if (action.overrides) {
+                                                      setAccountData(action.overrides);
+                                                    }
+                                                    if (action.modifiedFields) {
+                                                      setModifiedFields(new Set(action.modifiedFields));
+                                                    }
+                                                    if (action.fetchBeforeUse !== undefined) {
+                                                      setFetchBeforeUse(action.fetchBeforeUse);
+                                                    }
+                                                  }
+                                                }
+
+                                                setShowProtocolPanel(true);
+                                              }
+                                            }}
+                                          >
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-zinc-900 p-1">
+                                              <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
+                                            </div>
+                                            <div className="flex-1">
+                                              <div className="text-sm font-medium text-zinc-100">{action.action}</div>
+                                              <div className="text-xs text-zinc-400">{action.protocol}</div>
+                                            </div>
+                                            {/* Delete button - only in edit mode when slot is selected */}
+                                            {mode === 'edit' && selectedSlotId === slot.id && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  deleteActionFromSlot(slot.id, actionIndex);
+                                                }}
+                                                className="absolute bottom-2 right-2 text-zinc-500 transition-colors hover:text-zinc-300"
+                                                title="Delete action"
+                                              >
+                                                <TrashIcon className="h-4 w-4" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {/* Actions in this slot - Collapsed Icon View */}
+                                  {slot.actions.length === 0 ? (
+                                    <div className="flex flex-col items-center gap-2 pt-2">
+                                      <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-800/30"></div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center gap-2 pt-2">
+                                      {slot.actions.map((action, actionIndex) => {
+                                        const localIconMap: Record<string, string> = {
+                                          pyth: '/assets/pyth.svg',
+                                          switchboard: '/assets/switchboard.svg',
+                                          jupiter: '/assets/jupiter.svg',
+                                          raydium: '/assets/raydium.svg',
+                                          whirlpool: '/assets/whirlpool.svg',
+                                          drift: '/assets/drift.svg',
+                                          kamino: '/assets/kamino.svg',
+                                        };
+                                        const iconSrc = localIconMap[action.protocolId] || '/assets/default.svg';
+
+                                        return (
+                                          <div
+                                            key={`${action.protocolId}-${action.actionId}-${actionIndex}`}
+                                            className="flex h-12 w-12 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 p-1"
+                                            title={`${action.protocol}: ${action.action}`}
+                                          >
+                                            <img src={iconSrc} alt={action.protocol} className="h-8 w-8" />
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </motion.div>
+                          </AnimatePresence>
+                        </div>
+
+                        {/* Delete Button - only shown when slot is selected and in Edit mode */}
+                        {mode === 'edit' && slots.length > 1 && selectedSlotId === slot.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteSlot(slot.id);
+                            }}
+                            className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-all hover:scale-110 hover:bg-red-600"
+                            title="Delete slot"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                      </motion.div>
                     </motion.div>
+
+                    {/* Gap with insert button - shown when hovering the slot before OR the gap itself, only in Edit mode */}
+                    {mode === 'edit' && (
+                      <div className="group/insert relative" style={{ width: '48px' }}>
+                        {/* Vertical line - shorter and positioned lower */}
+                        <div
+                          className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-pink-500 opacity-0 transition-opacity group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
+                          style={{ top: '120px', height: '140px' }}
+                        />
+
+                        {/* Plus button - centered on the line */}
+                        <button
+                          onClick={() => insertSlotAt(index + 1)}
+                          className="absolute z-10 flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-white opacity-0 shadow-lg transition-all hover:scale-110 hover:bg-pink-600 group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
+                          style={{ top: '170px', left: '50%', transform: 'translateX(-50%)' }}
+                          title="Insert slot here"
+                        >
+                          <PlusIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    )}
                   </motion.div>
-
-                  {/* Gap with insert button - shown when hovering the slot before OR the gap itself, only in Edit mode */}
-                  {mode === 'edit' && (
-                    <div className="group/insert relative" style={{ width: '48px' }}>
-                      {/* Vertical line - shorter and positioned lower */}
-                      <div
-                        className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-pink-500 opacity-0 transition-opacity group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100"
-                        style={{ top: '120px', height: '140px' }}
-                      />
-
-                      {/* Plus button - centered on the line */}
-                      <button
-                        onClick={() => insertSlotAt(index + 1)}
-                        className="absolute z-10 flex h-8 w-8 items-center justify-center rounded-full bg-pink-500 text-white opacity-0 shadow-lg transition-all group-hover/insert:opacity-100 group-hover/slot-wrapper:opacity-100 hover:scale-110 hover:bg-pink-600"
-                        style={{ top: '170px', left: '50%', transform: 'translateX(-50%)' }}
-                        title="Insert slot here"
-                      >
-                        <PlusIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
+                );
+              })}
             </AnimatePresence>
           </div>
         </div>
@@ -1311,7 +1327,7 @@ export default function ScenarioEditor({
                       placeholder="Search protocols..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pr-5 pl-14 text-base text-zinc-100 shadow-lg backdrop-blur-2xl transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500 focus:outline-none"
+                      className="relative block h-12 w-full rounded-full border border-zinc-700/50 bg-zinc-900/40 pl-14 pr-5 text-base text-zinc-100 shadow-lg backdrop-blur-2xl transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500"
                     />
                   </div>
                 </div>
@@ -1431,7 +1447,7 @@ export default function ScenarioEditor({
                               placeholder="Search overrides..."
                               value={actionSearchQuery}
                               onChange={(e) => setActionSearchQuery(e.target.value)}
-                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pr-4 pl-11 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 focus:outline-none"
+                              className="block h-10 w-full rounded-lg border border-zinc-700/50 bg-zinc-800/40 pl-11 pr-4 text-sm text-zinc-100 transition-all placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                             />
                           </div>
                           <div className="space-y-2">
@@ -1458,7 +1474,7 @@ export default function ScenarioEditor({
                             <>
                               <div className="mb-4">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="text-sm font-semibold tracking-wide text-zinc-400 uppercase">
+                                  <h4 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
                                     Account Data
                                   </h4>
                                   <div className="flex items-center gap-3">
@@ -1757,7 +1773,7 @@ export default function ScenarioEditor({
                                                 setValue(fieldPath, newValue);
                                               }}
                                               placeholder={`Enter ${String(field.name)}...`}
-                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:outline-none ${
+                                              className={`block w-full rounded-lg border px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 ${
                                                 fieldState === 'override'
                                                   ? 'border-yellow-500 bg-yellow-500/5 focus:border-yellow-400 focus:ring-yellow-500/50'
                                                   : fieldState === 'streamed'
@@ -1857,7 +1873,7 @@ export default function ScenarioEditor({
                           style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
                         >
                           <span
-                            className={`font-mono text-[10px] tracking-wide whitespace-nowrap uppercase transition-colors ${
+                            className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wide transition-colors ${
                               isExecuted ? 'text-green-500' : 'text-zinc-400'
                             }`}
                           >
@@ -1865,7 +1881,7 @@ export default function ScenarioEditor({
                           </span>
                           {/* Small triangle tick pointing down */}
                           <div
-                            className={`h-0 w-0 border-t-[3px] border-r-[3px] border-l-[3px] border-r-transparent border-l-transparent transition-colors ${
+                            className={`h-0 w-0 border-l-[3px] border-r-[3px] border-t-[3px] border-l-transparent border-r-transparent transition-colors ${
                               isExecuted ? 'border-t-green-500' : 'border-t-zinc-400'
                             }`}
                           />
@@ -1917,7 +1933,7 @@ export default function ScenarioEditor({
                     {/* Pink progress overlay (ready state) - shows when in play mode */}
                     {mode === 'play' && (
                       <div
-                        className="absolute top-0 left-0 h-2 overflow-hidden rounded-full"
+                        className="absolute left-0 top-0 h-2 overflow-hidden rounded-full"
                         style={{ width: '12.5%' }}
                       >
                         <div
@@ -1955,7 +1971,7 @@ export default function ScenarioEditor({
                           <>
                             {/* Green dashed segment - always 12.5% of full bar */}
                             <div
-                              className="absolute top-0 left-0 h-2 transition-all duration-300"
+                              className="absolute left-0 top-0 h-2 transition-all duration-300"
                               style={{
                                 width: '12.5%',
                                 backgroundImage:
@@ -2029,6 +2045,7 @@ export default function ScenarioEditor({
                       <button
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
                         title="Download scenario"
+                        onClick={snapshotScenario}
                       >
                         <ArrowDownTrayIcon className="h-5 w-5" />
                       </button>
@@ -2044,7 +2061,7 @@ export default function ScenarioEditor({
                         <CheckIcon className="h-6 w-6" />
                       </button>
                       <button
-                        onClick={exportSnapshot}
+                        onClick={snapshotScenario}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
                         title="Export snapshot"
                       >
