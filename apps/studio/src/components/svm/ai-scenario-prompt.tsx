@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { logger } from '@surfpool/shared';
 import { SparklesIcon, ArrowRightIcon, StopIcon } from '@heroicons/react/24/solid';
 import { useState, useRef, useEffect } from 'react';
 
@@ -55,7 +56,7 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
 
   const sessionIdRef = useRef<string | null>(null);
 
-  const sendMcpRequest = async (request: any): Promise<any> => {
+  const sendMcpRequest = async (request: Record<string, unknown>): Promise<Record<string, any> | null> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream',
@@ -76,12 +77,12 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
     // Capture session ID from response (try both case variations)
     const newSessionId = response.headers.get('Mcp-Session-Id') || response.headers.get('mcp-session-id');
     if (newSessionId) {
-      console.log('🤖 Got session ID:', newSessionId);
+      logger.log('🤖 Got session ID:', newSessionId);
       sessionIdRef.current = newSessionId;
     }
 
     // Debug: log all response headers
-    console.log('🤖 Response headers:', [...response.headers.entries()]);
+    logger.log('🤖 Response headers:', [...response.headers.entries()]);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -98,7 +99,7 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
 
       const decoder = new TextDecoder();
       let buffer = '';
-      let result: any = null;
+      let result: Record<string, any> | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -115,11 +116,11 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
 
             try {
               const parsed = JSON.parse(data);
-              console.log('🤖 MCP SSE event:', parsed);
+              logger.log('🤖 MCP SSE event:', parsed);
               if (parsed.result) result = parsed;
               if (parsed.error) throw new Error(parsed.error.message);
-            } catch (e: any) {
-              if (e.message && !e.message.includes('JSON')) throw e;
+            } catch (e: unknown) {
+              if (e instanceof Error && !e.message.includes('JSON')) throw e;
             }
           }
         }
@@ -142,7 +143,7 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
     sessionIdRef.current = null; // Reset session for new request
 
     try {
-      console.log('🤖 Initializing MCP session...');
+      logger.log('🤖 Initializing MCP session...');
 
       // Step 1: Initialize the MCP session
       const initRequest = {
@@ -160,7 +161,7 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
       };
 
       const initResponse = await sendMcpRequest(initRequest);
-      console.log('🤖 MCP initialized:', initResponse);
+      logger.log('🤖 MCP initialized:', initResponse);
 
       // Step 2: Send initialized notification
       const initializedNotification = {
@@ -168,7 +169,7 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
         method: 'notifications/initialized',
       };
       await sendMcpRequest(initializedNotification);
-      console.log('🤖 MCP initialized notification sent');
+      logger.log('🤖 MCP initialized notification sent');
 
       // Step 3: Call the tool
       const toolRequest = {
@@ -183,9 +184,9 @@ export default function AIScenarioPrompt({ onScenarioCreated, className = '' }: 
         },
       };
 
-      console.log('🤖 Calling tool:', toolRequest);
+      logger.log('🤖 Calling tool:', toolRequest);
       const toolResponse = await sendMcpRequest(toolRequest);
-      console.log('🤖 Tool response:', toolResponse);
+      logger.log('🤖 Tool response:', toolResponse);
 
       if (toolResponse?.error) {
         throw new Error(toolResponse.error.message || 'Tool call failed');

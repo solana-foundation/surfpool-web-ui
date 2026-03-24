@@ -1,4 +1,5 @@
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { logger } from '@surfpool/shared';
 import { PublicKey } from '@solana/web3.js';
 import { convertTokenAmount } from './address-utils';
 
@@ -48,10 +49,10 @@ export async function getTokenBalance(
       body: JSON.stringify(rpcRequest),
     });
     const data = (await response.json()) as { result?: { value?: TokenAmount } };
-    console.log(data);
+    logger.log(data);
     return { tokenAmount: data?.result?.value, ata_address: tokenAccount.toBase58() };
   } catch (error) {
-    console.log(error);
+    logger.log(error);
   }
 }
 
@@ -84,7 +85,7 @@ export async function getAccountBalance(
       return uiAmount;
     }
   } catch (error) {
-    console.log(error);
+    logger.log(error);
     return 0;
   }
 }
@@ -110,9 +111,9 @@ export async function setAccount(
       body: JSON.stringify(rpcRequest),
     });
     const data = (await response.json()) as { result?: { value?: any } };
-    console.log(data);
+    logger.log(data);
     return data?.result?.value;
   } catch (error) {
-    console.log(error);
+    logger.log(error);
   }
 }

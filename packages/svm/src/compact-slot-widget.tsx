@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { logger } from '@surfpool/shared';
 
 interface CompactSlotWidgetProps {
   className?: string;
@@ -113,7 +114,7 @@ export default function CompactSlotWidget({
         directWsRef.current = null;
       }
 
-      console.log('CompactSlotWidget: Direct WS connecting to', wsUrl);
+      logger.log('CompactSlotWidget: Direct WS connecting to', wsUrl);
       const ws = new WebSocket(wsUrl);
       directWsRef.current = ws;
 
@@ -122,7 +123,7 @@ export default function CompactSlotWidget({
           ws.close();
           return;
         }
-        console.log('CompactSlotWidget: Direct WS connected');
+        logger.log('CompactSlotWidget: Direct WS connected');
         setIsDisconnected(false);
 
         // Subscribe to slots
@@ -141,13 +142,13 @@ export default function CompactSlotWidget({
           // Handle subscription confirmation
           if (data.id === 1 && data.result !== undefined) {
             directSubscriptionIdRef.current = data.result;
-            console.log('CompactSlotWidget: Direct WS subscribed, ID:', data.result);
+            logger.log('CompactSlotWidget: Direct WS subscribed, ID:', data.result);
           }
 
           // Handle slot notifications
           if (data.method === 'slotNotification' && data.params?.result) {
             const slot = data.params.result?.parent;
-            console.log('CompactSlotWidget: Slot received:', slot);
+            logger.log('CompactSlotWidget: Slot received:', slot);
             handleSlotData(data.params.result);
           }
         } catch (err) {
@@ -156,7 +157,7 @@ export default function CompactSlotWidget({
       };
 
       ws.onclose = () => {
-        console.log('CompactSlotWidget: Direct WS closed');
+        logger.log('CompactSlotWidget: Direct WS closed');
         setIsDisconnected(true);
         directWsRef.current = null;
         directSubscriptionIdRef.current = null;
@@ -179,7 +180,7 @@ export default function CompactSlotWidget({
       isMounted = false;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (directWsRef.current) {
-        console.log('CompactSlotWidget: Cleaning up direct WS');
+        logger.log('CompactSlotWidget: Cleaning up direct WS');
         directWsRef.current.close();
         directWsRef.current = null;
       }
@@ -203,7 +204,7 @@ export default function CompactSlotWidget({
         if (!isMounted) return;
 
         await externalWsService.subscribeToSlots();
-        console.log('CompactSlotWidget: Service subscribed to slots');
+        logger.log('CompactSlotWidget: Service subscribed to slots');
         isSubscribing = false;
       } catch (error) {
         isSubscribing = false;
@@ -225,7 +226,7 @@ export default function CompactSlotWidget({
     reconnectInterval = setInterval(() => {
       const timeSinceLastSlot = Date.now() - lastSlotReceivedRef.current;
       if (timeSinceLastSlot > 5000 && isMounted) {
-        console.log('CompactSlotWidget: No slots received for 5s, reconnecting...');
+        logger.log('CompactSlotWidget: No slots received for 5s, reconnecting...');
         startSlotSubscription();
       }
     }, 5000);
@@ -243,12 +244,12 @@ export default function CompactSlotWidget({
     if (cleanupOnUnmount) return; // Direct WS mode handles its own connection status
 
     const handleConnected = () => {
-      console.log('CompactSlotWidget: Service WebSocket connected');
+      logger.log('CompactSlotWidget: Service WebSocket connected');
       setIsDisconnected(false);
     };
 
     const handleDisconnected = () => {
-      console.log('CompactSlotWidget: Service WebSocket disconnected');
+      logger.log('CompactSlotWidget: Service WebSocket disconnected');
       setIsDisconnected(true);
     };
 
@@ -266,7 +267,7 @@ export default function CompactSlotWidget({
   // Listen for global pause state changes from other components
   useEffect(() => {
     const handlePauseChange = (event: CustomEvent) => {
-      console.log('CompactSlotWidget: Received pause state change:', event.detail.isPaused);
+      logger.log('CompactSlotWidget: Received pause state change:', event.detail.isPaused);
       setIsClockPaused(event.detail.isPaused);
     };
 
@@ -280,7 +281,7 @@ export default function CompactSlotWidget({
   // Listen for epoch changes (e.g., from time travel)
   useEffect(() => {
     const handleEpochChange = (event: CustomEvent) => {
-      console.log('CompactSlotWidget: Received epoch change:', event.detail);
+      logger.log('CompactSlotWidget: Received epoch change:', event.detail);
       if (event.detail.epoch !== undefined) {
         setEpoch(event.detail.epoch);
       }

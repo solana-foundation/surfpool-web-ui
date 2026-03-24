@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { logger } from '@surfpool/shared';
 
 export type NetworksResponseData = {
   networks: Network[];
@@ -20,7 +21,7 @@ export type NetworkStatus = {
 };
 
 export default async function handler(_req: NextApiRequest, res: NextApiResponse<NetworksResponseData>) {
-  console.log('here');
+  logger.log('here');
   // Get data from your database
   res.status(200).json({ networks: [] });
 }

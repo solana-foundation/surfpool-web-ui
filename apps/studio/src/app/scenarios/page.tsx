@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import { logger } from '@surfpool/shared';
 import { useSearchParams } from 'next/navigation';
 import ScenariosBento from '@/components/svm/scenarios-bento';
 import { Scenario } from '@/lib/scenarios-data';
@@ -20,7 +21,7 @@ function ScenariosContent() {
 
   // Debug: log when search params change
   useEffect(() => {
-    console.log('Search params changed:', { selectedId, selectedTab });
+    logger.log('Search params changed:', { selectedId, selectedTab });
   }, [selectedId, selectedTab]);
 
   useEffect(() => {
@@ -35,7 +36,7 @@ function ScenariosContent() {
         }
 
         const data = await response.json();
-        console.log('Loaded scenarios from API:', data);
+        logger.log('Loaded scenarios from API:', data);
 
         // Convert API response to scenarios array
         // Handle both array response and object response
@@ -170,10 +171,10 @@ function ScenariosContent() {
     const handleScenarioUpdate = () => {
       // Only refresh if detail pane is closed
       if (!isDetailPaneOpen) {
-        console.log('Scenario updated event received, refreshing scenarios');
+        logger.log('Scenario updated event received, refreshing scenarios');
         setRefreshKey((prev) => prev + 1);
       } else {
-        console.log('Scenario updated event received, but detail pane is open - skipping refresh');
+        logger.log('Scenario updated event received, but detail pane is open - skipping refresh');
       }
     };
 

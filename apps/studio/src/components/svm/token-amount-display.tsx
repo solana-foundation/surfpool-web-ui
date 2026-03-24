@@ -27,7 +27,7 @@ const TokenAmountDisplay: React.FC<TokenAmountDisplayProps> = ({
   variant = 'default'
 }) => {
   // Format the amount with proper decimal places
-  const formatAmount = (value: number, options: any) => {
+  const formatAmount = (value: number, options: Intl.NumberFormatOptions) => {
     const {
       minimumFractionDigits = 0,
       maximumFractionDigits = 9,

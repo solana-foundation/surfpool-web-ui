@@ -8,6 +8,7 @@ import confetti from 'canvas-confetti';
 import { useEffect, useState } from 'react';
 import { brandBlue, Dialog, DialogDescription, DialogTitle } from '@surfpool/ui';
 import { Field, Label } from '@surfpool/ui';
+import { getAddressExplorerUrl, logger } from '@surfpool/shared';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { getAccountBalance, getTokenBalance, setAccount } from './lib/solana-utils';
@@ -144,16 +145,16 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
         let jup = filterTokensByTicker('JUP', data, true);
 
         // Log the raw data first to debug
-        console.log('Raw token data:', data);
+        logger.log('Raw token data:', data);
 
         // Log each token search result
-        console.log('USDC tokens:', usdc);
-        console.log('USDT tokens:', usdt);
-        console.log('RAY tokens:', ray);
-        console.log('JUP tokens:', jup);
+        logger.log('USDC tokens:', usdc);
+        logger.log('USDT tokens:', usdt);
+        logger.log('RAY tokens:', ray);
+        logger.log('JUP tokens:', jup);
 
         // Log the filter function parameters for debugging
-        console.log('Filter function called with:', {
+        logger.log('Filter function called with:', {
           ticker: 'USDC',
           tokensLength: data.length,
           first: true,
@@ -329,10 +330,10 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
 
     for (const tokenFundingRequest of tokenFundingRequests) {
       for (const recipient of reccipients) {
-        console.log(
+        logger.log(
           `Sending ${tokenFundingRequest.amount} ${tokenFundingRequest.token.ticker} to ${recipient.address}`
         );
-        console.log(``);
+        logger.log(``);
 
         const is_spl_token: boolean = tokenFundingRequest.token.ticker != 'SOL';
 
@@ -340,7 +341,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
         if (!accountBalance && is_spl_token) {
           try {
             const response = await setAccount(recipient.address || '', DEFAULT_LAMPORTS_TO_FUND, rpcUrl);
-            console.log('SetAccountRequest response:', response);
+            logger.log('SetAccountRequest response:', response);
           } catch (error) {
             console.error('Error in RPC request:', error);
           }
@@ -1014,7 +1015,7 @@ export default function Faucet({ rpcUrl, primaryColor = '#8B5CF6', explorerClust
                                 if (key && value !== undefined) acc[key] = value;
                                 return acc;
                               }, {} as Record<string, string>)).toString()}`
-                            : `https://explorer.solana.com/address/${recipient.address}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+                            : getAddressExplorerUrl(recipient.address || '', rpcUrl);
                           window.open(explorerUrl, '_blank');
                         }}
                         className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-zinc-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-700"
