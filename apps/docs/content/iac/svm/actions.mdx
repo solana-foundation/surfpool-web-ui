@@ -293,30 +293,3 @@ action "setup" "svm::setup_surfnet" {
 }
 ```
 
----
-
-## deploy_subgraph
-
-`svm::deploy_subgraph` creates a live GraphQL database for your program.
-
-### Inputs
-
-| Name | Required | Type | Description |
-|------|----------|------|-------------|
-| `description` | optional | string | A description of the subgraph |
-| `subgraph_name` | optional | string | The name of the subgraph |
-| `program_id` | required | string | The ID of the program to index |
-| `program_idl` | required | string | The IDL of the program |
-| `block_height` | required | integer | The block height to start indexing from |
-| `event` | required | map | Events to index in the subgraph |
-
-```hcl
-action "transfer_event_subgraph" "svm::deploy_subgraph" {
-    program_id = action.deploy.program_id
-    program_idl = action.deploy.program_idl
-    block_height = action.deploy.block_height
-    event {
-        name = "TransferEvent"
-    }
-}
-```
