@@ -1,6 +1,7 @@
 'use client';
 
 import { Navbar, NavbarItem, NavbarSection } from '@surfpool/ui';
+import { logger } from '@surfpool/shared';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { ReactNode, useEffect, useState } from 'react';
 import CollapsibleSearch from './collapsible-search';
@@ -91,25 +92,25 @@ export default function GenericBento<T extends BentoItem>({
       initialSelectedId !== undefined;
 
     if (shouldReset) {
-      console.log('GenericBento: initialSelectedId changed to different ID', lastInitialSelectedId, '->', initialSelectedId, 'tab:', initialTab);
+      logger.log('GenericBento: initialSelectedId changed to different ID', lastInitialSelectedId, '->', initialSelectedId, 'tab:', initialTab);
       setHasInitialized(false);
       setLastInitialSelectedId(initialSelectedId);
 
       // Update tab and expansion state if initialTab is provided
       if (initialTab) {
-        console.log('GenericBento: Setting active tab to', initialTab);
+        logger.log('GenericBento: Setting active tab to', initialTab);
         setActiveTab(initialTab);
         setIsExpanded(initialTab !== defaultTab);
         setLastInitialTab(initialTab);
       } else {
-        console.log('GenericBento: Setting active tab to default', defaultTab);
+        logger.log('GenericBento: Setting active tab to default', defaultTab);
         setActiveTab(defaultTab);
         setIsExpanded(false);
         setLastInitialTab(undefined);
       }
     } else if (initialSelectedId && !lastInitialSelectedId) {
       // First time getting an initialSelectedId, just track it
-      console.log('GenericBento: Tracking initial selectedId:', initialSelectedId);
+      logger.log('GenericBento: Tracking initial selectedId:', initialSelectedId);
       setLastInitialSelectedId(initialSelectedId);
     }
   }, [initialSelectedId, lastInitialSelectedId, initialTab, defaultTab]);
@@ -117,7 +118,7 @@ export default function GenericBento<T extends BentoItem>({
   // Update tab when initialTab changes (for URL-based tab switching)
   useEffect(() => {
     if (initialTab && initialTab !== lastInitialTab && selectedItem) {
-      console.log('GenericBento: initialTab changed', lastInitialTab, '->', initialTab);
+      logger.log('GenericBento: initialTab changed', lastInitialTab, '->', initialTab);
       setActiveTab(initialTab);
       setIsExpanded(initialTab !== defaultTab);
       setLastInitialTab(initialTab);
@@ -129,11 +130,11 @@ export default function GenericBento<T extends BentoItem>({
     if (!hasInitialized && initialSelectedId) {
       // Only try if we have items loaded
       if (items.length > 0) {
-        console.log('Deep linking: searching for', initialSelectedId, 'in', items.length, 'items');
-        console.log('Deep linking: item IDs:', items.map(i => i.id));
+        logger.log('Deep linking: searching for', initialSelectedId, 'in', items.length, 'items');
+        logger.log('Deep linking: item IDs:', items.map(i => i.id));
         const itemToSelect = items.find(item => item.id === initialSelectedId);
         if (itemToSelect) {
-          console.log('Deep linking: found item', itemToSelect.id);
+          logger.log('Deep linking: found item', itemToSelect.id);
           setSelectedItem(itemToSelect);
           setSelectedItemId(initialSelectedId);
           setHasInitialized(true);
@@ -143,7 +144,7 @@ export default function GenericBento<T extends BentoItem>({
           setHasInitialized(true);
         }
       } else {
-        console.log('Deep linking: waiting for items to load, currently', items.length);
+        logger.log('Deep linking: waiting for items to load, currently', items.length);
       }
       // If items.length is 0, don't mark as initialized yet - wait for items to load
     } else if (!hasInitialized && !initialSelectedId) {
@@ -168,19 +169,19 @@ export default function GenericBento<T extends BentoItem>({
   // Separate effect to update selected item when items change
   useEffect(() => {
     if (selectedItemId) {
-      console.log('GenericBento: items changed, checking if selected item still exists:', selectedItemId);
+      logger.log('GenericBento: items changed, checking if selected item still exists:', selectedItemId);
 
       // Find the item in the current items list to ensure it's up-to-date
       const updatedItem = items.find(item => item.id === selectedItemId);
 
       // If the item no longer exists in the list, deselect it
       if (!updatedItem) {
-        console.log('GenericBento: selected item no longer exists, deselecting');
+        logger.log('GenericBento: selected item no longer exists, deselecting');
         handleClose();
         return;
       }
 
-      console.log('GenericBento: updating selected item with fresh data');
+      logger.log('GenericBento: updating selected item with fresh data');
       // Always update with the latest version from items to ensure fresh data
       setSelectedItem(updatedItem);
     }
@@ -188,7 +189,7 @@ export default function GenericBento<T extends BentoItem>({
 
   // Notify parent when selection changes
   useEffect(() => {
-    console.log('GenericBento: selectedItem changed to:', selectedItem?.id || 'null');
+    logger.log('GenericBento: selectedItem changed to:', selectedItem?.id || 'null');
     onSelectionChange?.(selectedItem);
   }, [selectedItem, onSelectionChange]);
 
@@ -265,7 +266,7 @@ export default function GenericBento<T extends BentoItem>({
                     key={String(item.id)}
                     className="group relative cursor-pointer transition-transform duration-200 ease-out hover:scale-[1.02]"
                     onClick={() => {
-                      console.log('GenericBento: item clicked:', item.id);
+                      logger.log('GenericBento: item clicked:', item.id);
                       setSelectedItem(item);
                       setActiveTab(defaultTab);
                       // Notify parent about item selection so URL can be updated

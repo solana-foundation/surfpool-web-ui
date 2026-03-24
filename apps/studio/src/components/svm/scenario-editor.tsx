@@ -15,7 +15,8 @@ import {
 } from '@heroicons/react/24/solid';
 import { Combobox, ComboboxOption, ComboboxLabel, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useEffect, useState } from 'react';
+import { logger } from '@surfpool/shared';
+import React, { useEffect, useRef, useState } from 'react';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -42,7 +43,7 @@ interface Slot {
     actionId: string;
     protocol: string;
     action: string;
-    overrides?: Record<string, any>;
+    overrides?: Record<string, unknown>;
     modifiedFields?: string[];
     fetchBeforeUse?: boolean;
     account?: any; // Account address from template (Pubkey or PDA)
@@ -66,7 +67,7 @@ interface ScenarioEditorProps {
       action: string;
       account?: any; // Preserve account data from backend
       fetchBeforeUse?: boolean; // Preserve fetchBeforeUse flag from backend
-      overrides?: Record<string, any>; // Preserve the values/overrides from backend
+      overrides?: Record<string, unknown>; // Preserve the values/overrides from backend
       modifiedFields?: string[]; // Track which fields were modified
     }>;
   }>;
@@ -94,15 +95,15 @@ export default function ScenarioEditor({
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
-  const [initialized, setInitialized] = useState(false);
+  const initializedRef = useRef(false);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
-  const [isFirstSlotsChange, setIsFirstSlotsChange] = useState<boolean>(true);
+  const isFirstSlotsChangeRef = useRef(true);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
-    setIsFirstSlotsChange(true);
+    isFirstSlotsChangeRef.current = true;
   }, [scenarioId]);
 
   // Load scenario tags from backend
@@ -126,20 +127,20 @@ export default function ScenarioEditor({
 
   // Load scenario from initialSteps (backend data) - always prioritize fresh data
   React.useEffect(() => {
-    if (initialized || typeof window === 'undefined') return;
+    if (initializedRef.current || typeof window === 'undefined') return;
 
-    console.log('ScenarioEditor: Loading scenario', scenarioId, 'initialSteps:', initialSteps);
+    logger.log('ScenarioEditor: Loading scenario', scenarioId, 'initialSteps:', initialSteps);
 
     // Always prefer initialSteps from backend over localStorage cache
     if (initialSteps && initialSteps.length > 0) {
-      console.log('Converting initialSteps to slots:', initialSteps);
+      logger.log('Converting initialSteps to slots:', initialSteps);
       const convertedSlots: Slot[] = initialSteps.map((step, index) => ({
         id: step.id,
         height: index,
         actions: step.actions || [],
       }));
 
-      console.log('Converted slots with actions:', convertedSlots.map(s => ({
+      logger.log('Converted slots with actions:', convertedSlots.map(s => ({
         id: s.id,
         actions: s.actions.map(a => ({
           actionId: a.actionId,
@@ -154,7 +155,7 @@ export default function ScenarioEditor({
 
       // Update localStorage with fresh data
       const savedScenarios = localStorage.getItem('scenarios');
-      const scenarios: Record<string, any> = savedScenarios ? JSON.parse(savedScenarios) : {};
+      const scenarios: Record<string, unknown> = savedScenarios ? JSON.parse(savedScenarios) : {};
       scenarios[scenarioId] = {
         slots: convertedSlots,
         updatedAt: new Date().toISOString(),
@@ -168,11 +169,11 @@ export default function ScenarioEditor({
           const scenarios = JSON.parse(savedScenarios);
           const scenario = scenarios[scenarioId];
           if (scenario?.slots && scenario.slots.length > 0) {
-            console.log('Loading from localStorage (no initialSteps):', scenario.slots);
+            logger.log('Loading from localStorage (no initialSteps):', scenario.slots);
             setSlots(scenario.slots);
             setHasAnimated(new Set(scenario.slots.map((s: Slot) => s.id)));
             setSelectedSlotId(scenario.slots[0]?.id || '');
-            setInitialized(true);
+            initializedRef.current = true;
             return;
           }
         } catch (error) {
@@ -181,24 +182,24 @@ export default function ScenarioEditor({
       }
 
       // No data at all, create empty slot
-      console.log('No data found, creating empty slot');
+      logger.log('No data found, creating empty slot');
       const emptySlot = { id: '1', height: 0, actions: [] };
       setSlots([emptySlot]);
       setHasAnimated(new Set(['1']));
       setSelectedSlotId('1');
     }
 
-    setInitialized(true);
-  }, [scenarioId, initialSteps, initialized]);
+    initializedRef.current = true;
+  }, [scenarioId, initialSteps]);
 
   // Save slots to localStorage whenever they change (but not on initial load)
   React.useEffect(() => {
-    if (!initialized || typeof window === 'undefined' || slots.length === 0) return;
+    if (!initializedRef.current || typeof window === 'undefined' || slots.length === 0) return;
 
-    console.log('Saving slots to localStorage:', slots);
+    logger.log('Saving slots to localStorage:', slots);
 
     const savedScenarios = localStorage.getItem('scenarios');
-    let scenarios: Record<string, any> = {};
+    let scenarios: Record<string, unknown> = {};
 
     if (savedScenarios) {
       try {
@@ -216,7 +217,7 @@ export default function ScenarioEditor({
     localStorage.setItem('scenarios', JSON.stringify(scenarios));
 
     // Only dispatch event and sync with backend after the first change (skip on initial load into editor)
-    if (!isFirstSlotsChange) {
+    if (!isFirstSlotsChangeRef.current) {
       // Sync with backend using PATCH endpoint
       const syncWithBackend = async () => {
         try {
@@ -224,7 +225,7 @@ export default function ScenarioEditor({
           const overrides = slots.flatMap((slot) =>
             slot.actions.map((action) => {
               // Start with existing overrides as flat values (they may already be flat from backend)
-              let flatValues: Record<string, any> = {};
+              let flatValues: Record<string, unknown> = {};
 
               // If action.overrides exists, extract only flat key-value pairs for the backend
               // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
@@ -241,7 +242,16 @@ export default function ScenarioEditor({
                 }
               }
 
-              const override: any = {
+              const override: {
+                id: string;
+                templateId: string;
+                values: Record<string, unknown>;
+                scenarioRelativeSlot: number;
+                label: string;
+                enabled: boolean;
+                fetchBeforeUse: boolean;
+                account?: string;
+              } = {
                 // Use existing overrideId if available, otherwise generate one
                 id: action.overrideId || `${action.actionId}_${slot.height}`,
                 templateId: action.actionId, // actionId IS the templateId
@@ -269,7 +279,7 @@ export default function ScenarioEditor({
             tags: scenarioTags, // Preserve existing tags
           };
 
-          console.log('🔍 PATCH request data:', JSON.stringify(patchData, null, 2));
+          logger.log('🔍 PATCH request data:', JSON.stringify(patchData, null, 2));
 
           const response = await fetch(`${studioUrl}/v1/scenarios/${scenarioId}`, {
             method: 'PATCH',
@@ -283,7 +293,7 @@ export default function ScenarioEditor({
             const errorText = await response.text();
             console.error('Failed to sync scenario with backend:', response.status, errorText);
           } else {
-            console.log('Scenario synced with backend successfully');
+            logger.log('Scenario synced with backend successfully');
           }
         } catch (error) {
           console.error('Error syncing scenario with backend:', error);
@@ -297,14 +307,9 @@ export default function ScenarioEditor({
       syncWithBackend();
       window.dispatchEvent(new Event('scenarioUpdated'));
     } else {
-      setIsFirstSlotsChange(false);
+      isFirstSlotsChangeRef.current = false;
     }
-  }, [slots, scenarioId, scenarioName, scenarioDescription, initialized, isFirstSlotsChange, studioUrl]);
-
-  // Debug: Log selection changes
-  React.useEffect(() => {
-    console.log('Selected slot ID changed to:', selectedSlotId);
-  }, [selectedSlotId]);
+  }, [slots, scenarioId, scenarioName, scenarioDescription, studioUrl]);
 
   // Handle ESC key to exit Edit mode
   React.useEffect(() => {
@@ -458,7 +463,7 @@ export default function ScenarioEditor({
   const getFieldTypeInfo = (field: any, idl: any): { type: string; isNested: boolean; nestedFields?: any[] } => {
     const fieldType = field.type;
 
-    console.log('🔍 getFieldTypeInfo for field:', field.name, 'fieldType:', fieldType);
+    logger.log('🔍 getFieldTypeInfo for field:', field.name, 'fieldType:', fieldType);
 
     // Simple types (string primitives like "u64", "i64", "bool", etc.)
     if (typeof fieldType === 'string') {
@@ -493,14 +498,14 @@ export default function ScenarioEditor({
         typeName = fieldType.defined.name;
       }
 
-      console.log('🔍 Defined type found:', typeName);
+      logger.log('🔍 Defined type found:', typeName);
 
       if (typeName) {
         const typeDefinition = lookupTypeDefinition(typeName, idl);
-        console.log('🔍 Type definition lookup result:', typeDefinition);
+        logger.log('🔍 Type definition lookup result:', typeDefinition);
 
         if (typeDefinition?.type?.kind === 'struct' && typeDefinition.type.fields) {
-          console.log('✅ Found nested struct with', typeDefinition.type.fields.length, 'fields');
+          logger.log('✅ Found nested struct with', typeDefinition.type.fields.length, 'fields');
           return {
             type: typeName,
             isNested: true,
@@ -518,7 +523,7 @@ export default function ScenarioEditor({
 
   // Helper to convert flat dot-notation object to nested object
   // e.g., {"price_message.price": 123} -> {price_message: {price: 123}}
-  const flatToNested = (flat: Record<string, any>): Record<string, any> => {
+  const flatToNested = (flat: Record<string, unknown>): Record<string, any> => {
     const result: Record<string, any> = {};
     for (const [key, value] of Object.entries(flat)) {
       const keys = key.split('.');
@@ -550,7 +555,7 @@ export default function ScenarioEditor({
 
     try {
       // Step 1: Register the IDL using slot 1
-      console.log('📝 Registering IDL for', action.template.address);
+      logger.log('📝 Registering IDL for', action.template.address);
 
       // Extract address string
       let addressString;
@@ -562,7 +567,7 @@ export default function ScenarioEditor({
       }
 
       // Step 1: Fetch account info with parsed JSON
-      console.log('🔍 Fetching account info for address:', addressString);
+      logger.log('🔍 Fetching account info for address:', addressString);
 
       const getAccountInfoRequest = {
         jsonrpc: '2.0',
@@ -577,7 +582,7 @@ export default function ScenarioEditor({
         ],
       };
 
-      console.log('📤 getAccountInfo request:', JSON.stringify(getAccountInfoRequest, null, 2));
+      logger.log('📤 getAccountInfo request:', JSON.stringify(getAccountInfoRequest, null, 2));
 
       const accountInfoResponse = await fetch(rpcUrl, {
         method: 'POST',
@@ -586,12 +591,12 @@ export default function ScenarioEditor({
       });
 
       const accountInfoData = await accountInfoResponse.json();
-      console.log('✅ Account info received:', accountInfoData);
+      logger.log('✅ Account info received:', accountInfoData);
 
       if (accountInfoData.result?.value?.data?.parsed) {
         // Populate accountData with the parsed data
         const parsed = accountInfoData.result.value.data.parsed;
-        console.log('📊 Parsed account data:', parsed);
+        logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
       }
 
@@ -661,7 +666,7 @@ export default function ScenarioEditor({
       setMode('edit');
       setSelectedSlotId(newSlot.id);
       setHasAnimated((prev) => new Set([...prev, newSlot.id]));
-      console.log('New slot created and selected:', newSlot.id);
+      logger.log('New slot created and selected:', newSlot.id);
     }, 0);
   };
 
@@ -763,7 +768,7 @@ export default function ScenarioEditor({
             const currentAbsoluteSlot = epochData.result.absoluteSlot;
             const nextSlot = currentAbsoluteSlot + 1;
 
-            console.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
+            logger.log('⏭️ Stepping forward from slot', currentAbsoluteSlot, 'to', nextSlot);
 
             // Call surfnet_timeTravel with next absolute slot
             const timeTravelResponse = await fetch(rpcUrl, {
@@ -779,7 +784,7 @@ export default function ScenarioEditor({
 
             if (timeTravelResponse.ok) {
               const timeTravelData = await timeTravelResponse.json();
-              console.log('✅ Time travel successful:', timeTravelData.result);
+              logger.log('✅ Time travel successful:', timeTravelData.result);
             } else {
               console.error('❌ Time travel failed:', timeTravelResponse.status);
             }
@@ -800,7 +805,7 @@ export default function ScenarioEditor({
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
         // Start with existing overrides as flat values (they may already be flat from backend)
-        let flatValues: Record<string, any> = {};
+        let flatValues: Record<string, unknown> = {};
 
         // If action.overrides exists, extract only flat key-value pairs
         // The backend expects flat dot-notation format (e.g., "price_message.price": 123)
@@ -863,7 +868,7 @@ export default function ScenarioEditor({
             detail: { isPaused: true },
           })
         );
-        console.log('🎬 Clock paused before scenario registration');
+        logger.log('🎬 Clock paused before scenario registration');
       }
     } catch (error) {
       console.error('Error pausing clock:', error);
@@ -871,7 +876,7 @@ export default function ScenarioEditor({
 
     // Register scenario with surfnet (clock is now paused, no race condition)
     try {
-      console.log('📤 Registering scenario:', scenario);
+      logger.log('📤 Registering scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -885,7 +890,7 @@ export default function ScenarioEditor({
 
       if (registerResponse.ok) {
         const registerData = await registerResponse.json();
-        console.log('✅ Scenario registered:', registerData);
+        logger.log('✅ Scenario registered:', registerData);
       } else {
         console.error('❌ Failed to register scenario:', await registerResponse.text());
       }
@@ -924,7 +929,7 @@ export default function ScenarioEditor({
             detail: { isPaused: false },
           })
         );
-        console.log('▶️ Clock resumed after scenario completion');
+        logger.log('▶️ Clock resumed after scenario completion');
       }
     } catch (error) {
       console.error('Error resuming clock:', error);
@@ -951,7 +956,7 @@ export default function ScenarioEditor({
 
       if (response.ok) {
         const data = await response.json();
-        console.log('📸 Export snapshot response:', data);
+        logger.log('📸 Export snapshot response:', data);
 
         if (data.result) {
           // Create a blob from the JSON data
@@ -975,7 +980,7 @@ export default function ScenarioEditor({
           document.body.removeChild(link);
           URL.revokeObjectURL(url);
 
-          console.log('✅ Snapshot exported successfully');
+          logger.log('✅ Snapshot exported successfully');
         } else {
           console.error('❌ Export snapshot failed:', data.error);
         }
@@ -1166,7 +1171,7 @@ export default function ScenarioEditor({
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
-                                                    let restoredData: Record<string, any> = {};
+                                                    let restoredData: Record<string, unknown> = {};
 
                                                     if (action.overrides && Object.keys(action.overrides).length > 0) {
                                                       // Check if overrides are in flat dot-notation format
@@ -1176,7 +1181,7 @@ export default function ScenarioEditor({
                                                       if (isFlat) {
                                                         // Convert flat to nested for the form
                                                         restoredData = flatToNested(action.overrides);
-                                                        console.log('Converting flat overrides to nested:', action.overrides, '->', restoredData);
+                                                        logger.log('Converting flat overrides to nested:', action.overrides, '->', restoredData);
                                                       } else {
                                                         restoredData = { ...action.overrides };
                                                       }
@@ -1199,13 +1204,13 @@ export default function ScenarioEditor({
                                                         );
                                                       };
 
-                                                      console.log('🔍 Restoring constant_ref values from PDA seeds');
-                                                      console.log('  savedSeeds:', JSON.stringify(savedSeeds));
-                                                      console.log('  templateSeeds:', JSON.stringify(templateSeeds));
+                                                      logger.log('🔍 Restoring constant_ref values from PDA seeds');
+                                                      logger.log('  savedSeeds:', JSON.stringify(savedSeeds));
+                                                      logger.log('  templateSeeds:', JSON.stringify(templateSeeds));
 
                                                       // Match template seeds to saved seeds by index position
                                                       // This preserves the exact positional relationship
-                                                      console.log('  Matching seeds by position:');
+                                                      logger.log('  Matching seeds by position:');
 
                                                       const matchSeedsByPosition = (tSeeds: any[], sSeeds: any[], prefix: string = '') => {
                                                         tSeeds.forEach((templateSeed: any, index: number) => {
@@ -1231,12 +1236,12 @@ export default function ScenarioEditor({
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (${matchingOption.label || matchingOption.id})`);
                                                                 } else {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (not in constants)`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (not in constants)`);
                                                                 }
                                                               } else {
-                                                                console.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (no constant_ref)`);
+                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${savedPubkey} (no constant_ref)`);
                                                               }
 
                                                               restoredData[propName] = savedPubkey;
@@ -1258,12 +1263,12 @@ export default function ScenarioEditor({
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (${matchingOption.label || matchingOption.id})`);
                                                                 } else {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (not in constants)`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (not in constants)`);
                                                                 }
                                                               } else {
-                                                                console.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (no constant_ref)`);
+                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${savedValue} (no constant_ref)`);
                                                               }
 
                                                               restoredData[propName] = savedValue;
@@ -1294,12 +1299,12 @@ export default function ScenarioEditor({
                                                                 );
 
                                                                 if (matchingOption) {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (${matchingOption.label || matchingOption.id})`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (${matchingOption.label || matchingOption.id})`);
                                                                 } else {
-                                                                  console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (not in constants)`);
+                                                                  logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (not in constants)`);
                                                                 }
                                                               } else {
-                                                                console.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (no constant_ref)`);
+                                                                logger.log(`    ${prefix}[${index}] ${propName} = ${hexValue} (no constant_ref)`);
                                                               }
 
                                                               restoredData[propName] = hexValue;
@@ -1637,9 +1642,9 @@ export default function ScenarioEditor({
                                   {(() => {
                                     const fields = getFieldsFromIDL(selectedAction.template);
 
-                                    console.log('🔍 Fields extracted from IDL:', fields);
-                                    console.log('🔍 Account type:', selectedAction.template?.accountType);
-                                    console.log('🔍 Properties:', selectedAction.template?.properties);
+                                    logger.log('🔍 Fields extracted from IDL:', fields);
+                                    logger.log('🔍 Account type:', selectedAction.template?.accountType);
+                                    logger.log('🔍 Properties:', selectedAction.template?.properties);
 
                                     if (fields.length === 0) {
                                       return <p className="text-zinc-500">No editable fields available</p>;
@@ -1652,15 +1657,15 @@ export default function ScenarioEditor({
                                     const editableProperties = rawProperties.map((prop: any) =>
                                       typeof prop === 'string' ? prop : prop.path
                                     );
-                                    console.log('🔍 Editable properties:', editableProperties);
+                                    logger.log('🔍 Editable properties:', editableProperties);
                                     editableProperties.forEach((prop: string) => {
-                                      console.log('  📌', prop);
+                                      logger.log('  📌', prop);
                                     });
 
                                     // Get constants from template
                                     const constants = selectedAction.template?.constants || {};
-                                    console.log('🔍 Properties (raw):', rawProperties);
-                                    console.log('🔍 Constants:', constants);
+                                    logger.log('🔍 Properties (raw):', rawProperties);
+                                    logger.log('🔍 Constants:', constants);
 
                                     // Helper to check if a field is a constant_ref
                                     // Note: Backend serializes PropertyKind as "type" field (not "kind")
@@ -1780,7 +1785,7 @@ export default function ScenarioEditor({
                                       const typeInfo = getFieldTypeInfo(field, selectedAction.template?.idl);
                                       const fieldPath = path ? `${path}.${field.name}` : field.name;
 
-                                      console.log(
+                                      logger.log(
                                         '🔍 Rendering field:',
                                         fieldPath,
                                         'type:',
@@ -1795,20 +1800,20 @@ export default function ScenarioEditor({
 
                                       // Skip this field if it's not in the editable properties and has no children that are
                                       if (!shouldRenderField(fieldPath)) {
-                                        console.log('❌ Skipping field:', fieldPath);
+                                        logger.log('❌ Skipping field:', fieldPath);
                                         return null;
                                       }
 
                                       // Nested struct - render recursively
                                       if (typeInfo.isNested && typeInfo.nestedFields) {
-                                        console.log(
+                                        logger.log(
                                           '🔍 Nested struct:',
                                           fieldPath,
                                           'has',
                                           typeInfo.nestedFields.length,
                                           'nested fields'
                                         );
-                                        console.log(
+                                        logger.log(
                                           '🔍 Nested fields:',
                                           typeInfo.nestedFields.map((f: any) => f.name)
                                         );
@@ -1817,11 +1822,11 @@ export default function ScenarioEditor({
                                           .map((nestedField: any) => renderField(nestedField, fieldPath, depth + 1))
                                           .filter(Boolean); // Remove null entries
 
-                                        console.log('🔍 After filtering, childFields count:', childFields.length);
+                                        logger.log('🔍 After filtering, childFields count:', childFields.length);
 
                                         // Only render the struct if it has visible children
                                         if (childFields.length === 0) {
-                                          console.log('❌ No visible children for nested struct:', fieldPath);
+                                          logger.log('❌ No visible children for nested struct:', fieldPath);
                                           return null;
                                         }
 

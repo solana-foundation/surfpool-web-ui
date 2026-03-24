@@ -3,6 +3,7 @@
 import { CheckIcon, ClipboardIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import React from 'react';
 import { aggressiveTruncateAddress } from './lib/address-utils';
+import { getAddressExplorerUrl } from '@surfpool/shared';
 
 interface AddressDisplayProps {
   address: string;
@@ -33,7 +34,7 @@ const AddressDisplay: React.FC<AddressDisplayProps> = ({
     return <span className="text-xs text-gray-500">No address</span>;
   }
 
-  const explorerUrl = `https://explorer.solana.com/address/${address}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+  const explorerUrl = getAddressExplorerUrl(address, rpcUrl);
 
   return (
     <div className={`flex items-center gap-1 ${className}`}>

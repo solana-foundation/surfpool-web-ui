@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { logger } from '@surfpool/shared';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { PlusIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/solid';
@@ -283,7 +284,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
-    console.log('ScenariosBento: scenarios updated, count:', initialScenarios.length, 'IDs:', initialScenarios.map(s => s.id));
+    logger.log('ScenariosBento: scenarios updated, count:', initialScenarios.length, 'IDs:', initialScenarios.map(s => s.id));
     setScenarios(initialScenarios);
   }, [initialScenarios]);
 
@@ -294,14 +295,14 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
 
   // Handle item clicks - update URL when scenario is selected
   const handleItemClick = (item: ScenarioBentoItem, tab: string) => {
-    console.log('Scenario clicked:', item.id, 'tab:', tab);
+    logger.log('Scenario clicked:', item.id, 'tab:', tab);
     router.replace(`/scenarios?id=${item.id}&tab=${tab}`, { scroll: false });
   };
 
   // Handle tab changes - update URL to reflect current state
   const handleTabChange = (tabId: string) => {
     if (initialSelectedId) {
-      console.log('Tab changed to:', tabId, 'for scenario:', initialSelectedId);
+      logger.log('Tab changed to:', tabId, 'for scenario:', initialSelectedId);
       // Use replace instead of push to avoid navigation issues
       router.replace(`/scenarios?id=${initialSelectedId}&tab=${tabId}`, { scroll: false });
     }
@@ -338,7 +339,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
         throw new Error(`Failed to create scenario: ${response.status}`);
       }
 
-      console.log('Scenario created successfully:', newScenario.id);
+      logger.log('Scenario created successfully:', newScenario.id);
 
       // Refresh from server to get the latest data first
       if (onRefresh) {
@@ -348,7 +349,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
       // Then navigate to the new scenario with detail pane open
       // Use a small delay to ensure refresh completes
       setTimeout(() => {
-        console.log('Navigating to new scenario:', newScenario.id);
+        logger.log('Navigating to new scenario:', newScenario.id);
         router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
       }, 100);
 
@@ -406,7 +407,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
         throw new Error(`Failed to update scenario: ${response.status}`);
       }
 
-      console.log('Scenario updated successfully:', id);
+      logger.log('Scenario updated successfully:', id);
 
       // Only refresh if detail pane is closed
       if (!isDetailPaneOpen && onRefresh) {
@@ -433,7 +434,7 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
         throw new Error(`Failed to delete scenario: ${response.status}`);
       }
 
-      console.log('Scenario deleted successfully:', id);
+      logger.log('Scenario deleted successfully:', id);
 
       // Refresh from server to get the latest data
       if (onRefresh) {
@@ -463,8 +464,8 @@ export default function ScenariosBento({ scenarios: initialScenarios, onRefresh,
 
   // Debug: log bentoItems before passing to GenericBento
   useEffect(() => {
-    console.log('ScenariosBento: bentoItems ready, count:', bentoItems.length, 'IDs:', bentoItems.map(i => i.id));
-    console.log('ScenariosBento: initialSelectedId:', initialSelectedId, 'initialTab:', initialTab);
+    logger.log('ScenariosBento: bentoItems ready, count:', bentoItems.length, 'IDs:', bentoItems.map(i => i.id));
+    logger.log('ScenariosBento: initialSelectedId:', initialSelectedId, 'initialTab:', initialTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bentoItems.length, initialSelectedId, initialTab]);
 

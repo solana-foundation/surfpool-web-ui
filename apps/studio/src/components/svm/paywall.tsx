@@ -20,8 +20,6 @@ interface FeatureSection {
 interface PlanMetadata {
   description?: string;
   feature_overview?: string;
-  feature_subgraph_deployment?: string;
-  feature_subgraph_limits?: string;
   feature_surfnets?: string;
   features?: string;
 }
@@ -337,7 +335,7 @@ export function PaywallContent({ plans, loading, stars }: PaywallContentProps) {
         </div>
         <div className="flex items-center justify-between">
           <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            For advanced setups with simulations, subgraphs, or Crypto Infrastructure as Code workflows, please reach out!
+            For advanced setups with simulations or Crypto Infrastructure as Code workflows, please reach out!
           </p>
           <Button 
             color="pink" 

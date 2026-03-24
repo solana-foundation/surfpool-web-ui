@@ -6,6 +6,7 @@ import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { Badge, Dialog, DialogBody } from '@surfpool/ui';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getTransactionExplorerUrl, logger } from '@surfpool/shared';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 
@@ -183,7 +184,7 @@ const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): a
       }
     });
 
-    console.log('🔍 Merged states:', mergedStates);
+    logger.log('🔍 Merged states:', mergedStates);
     return mergedStates;
   };
 
@@ -1612,7 +1613,7 @@ export default function TransactionInspector({
 
   const registerIdl = (address: string) => {
     // Here you would typically send the IDL to your backend or store it
-    console.log('Registering IDL for address:', address, droppedIdl[address]);
+    logger.log('Registering IDL for address:', address, droppedIdl[address]);
     // For now, we'll just log it
     alert(`IDL registered for ${address}`);
   };
@@ -1897,7 +1898,7 @@ export default function TransactionInspector({
       return <span>{isRed ? beforeStr : afterStr}</span>;
     }
 
-    console.log(`🔍 highlightDifferences: "${beforeStr}" vs "${afterStr}", isRed: ${isRed}`);
+    logger.log(`🔍 highlightDifferences: "${beforeStr}" vs "${afterStr}", isRed: ${isRed}`);
 
     // Find the first difference and highlight from there to the end
     const maxLength = Math.max(beforeStr.length, afterStr.length);
@@ -1925,7 +1926,7 @@ export default function TransactionInspector({
 
     const colorClass = isRed ? 'text-red-500 font-bold bg-red-900/30' : 'text-green-500 font-bold bg-green-900/30';
 
-    console.log(`✅ Result: normal="${normalPart}", highlighted="${highlightedPart}"`);
+    logger.log(`✅ Result: normal="${normalPart}", highlighted="${highlightedPart}"`);
 
     return (
       <>
@@ -2303,7 +2304,7 @@ export default function TransactionInspector({
       setProfileError(null);
       setTransactionProfile(null);
 
-      console.log('🔍 Fetching transaction profile for signature:', signature);
+      logger.log('🔍 Fetching transaction profile for signature:', signature);
 
       // Fetch transaction profile with both jsonParsed and base64 encodings in parallel
       const [jsonParsedResponse, base64Response] = await Promise.all([
@@ -2339,8 +2340,8 @@ export default function TransactionInspector({
 
       const [jsonParsedData, base64Data] = await Promise.all([jsonParsedResponse.json(), base64Response.json()]);
 
-      console.log('📊 JSON Parsed response:', jsonParsedData);
-      console.log('📊 Base64 response:', base64Data);
+      logger.log('📊 JSON Parsed response:', jsonParsedData);
+      logger.log('📊 Base64 response:', base64Data);
 
       if (jsonParsedData.result?.value && base64Data.result?.value) {
         // Merge the results to include both jsonParsedBytes and rawBytes
@@ -2366,7 +2367,7 @@ export default function TransactionInspector({
 
   const handleTransactionClick = async (tx: any) => {
     try {
-      console.log('🖱️ Transaction clicked:', tx);
+      logger.log('🖱️ Transaction clicked:', tx);
       setSelectedTransaction(tx);
       setTransactionDialogOpen(true);
 
@@ -2534,7 +2535,7 @@ export default function TransactionInspector({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+                            const explorerUrl = getTransactionExplorerUrl(signature, rpcUrl);
                             window.open(explorerUrl, '_blank');
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-zinc-600 hover:text-gray-200"
@@ -2587,7 +2588,7 @@ export default function TransactionInspector({
                     onClick={() => {
                       const signature = selectedTransaction.transaction?.signatures?.[0];
                       if (signature) {
-                        const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+                        const explorerUrl = getTransactionExplorerUrl(signature, rpcUrl);
                         window.open(explorerUrl, '_blank');
                       }
                     }}
@@ -2645,7 +2646,7 @@ export default function TransactionInspector({
 
                           if (response.ok) {
                             const data = await response.json();
-                            console.log('📸 Export fixtures response:', data);
+                            logger.log('📸 Export fixtures response:', data);
 
                             if (data.result) {
                               // Download the snapshot as JSON
@@ -2659,7 +2660,7 @@ export default function TransactionInspector({
                               a.click();
                               document.body.removeChild(a);
                               URL.revokeObjectURL(url);
-                              console.log('✅ Fixtures exported successfully');
+                              logger.log('✅ Fixtures exported successfully');
                             }
                           } else {
                             console.error('❌ Error exporting fixtures:', response.statusText);

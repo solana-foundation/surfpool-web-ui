@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { logger } from '@surfpool/shared';
 import { solanaWebSocketService, SolanaWebSocketService } from './solana-websocket-service';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { PublicKey } from '@solana/web3.js';
@@ -104,21 +105,21 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   const processTransactionSignature = useCallback(async (signature: string, err?: any) => {
     // Check if we've already processed this signature
     if (processedSignaturesRef.current.has(signature)) {
-      console.log('🔄 Signature already processed, skipping:', signature);
+      logger.log('🔄 Signature already processed, skipping:', signature);
       return;
     }
     
     // Mark signature as processed
     processedSignaturesRef.current.add(signature);
     // Fetch full transaction details
-    console.log('🔄 Fetching transaction details for signature:', signature);
+    logger.log('🔄 Fetching transaction details for signature:', signature);
     await fetchTransactionDetails(signature);
   }, []);
 
   const fetchTransactionDetails = useCallback(async (signature: string) => {
     try {
-      console.log('🌐 Fetching transaction details from:', rpcUrl);
-      console.log('📋 Signature:', signature);
+      logger.log('🌐 Fetching transaction details from:', rpcUrl);
+      logger.log('📋 Signature:', signature);
       
       const requestBody = {
         jsonrpc: '2.0',
@@ -134,7 +135,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         ]
       };
       
-      console.log('📤 Request body:', requestBody);
+      logger.log('📤 Request body:', requestBody);
       
       const response = await fetch(rpcUrl, {
         method: 'POST',
@@ -144,15 +145,15 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
+      logger.log('📡 Response status:', response.status);
+      logger.log('📡 Response ok:', response.ok);
 
       const data = await response.json();
-      console.log('📥 Transaction fetch response:', data);
+      logger.log('📥 Transaction fetch response:', data);
       
       if (data.result) {
         const txInfo: TransactionInfo = data.result;
-        console.log('✅ Transaction details received:', {
+        logger.log('✅ Transaction details received:', {
           signature: txInfo.transaction.signatures[0],
           slot: txInfo.slot,
           blockTime: txInfo.blockTime,
@@ -167,15 +168,15 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
             (instruction: any) => instruction.programId === filterByProgram
           );
           if (!hasProgram) {
-            console.log('🚫 Transaction filtered out (program mismatch)');
+            logger.log('🚫 Transaction filtered out (program mismatch)');
             return;
           }
         }
         
-        console.log('📊 Adding transaction to state...');
+        logger.log('📊 Adding transaction to state...');
         setTransactions(prev => {
           const newTransactions = [txInfo, ...prev].slice(0, maxTransactions);
-          console.log('📈 Transaction added! Total transactions now:', newTransactions.length);
+          logger.log('📈 Transaction added! Total transactions now:', newTransactions.length);
           return newTransactions;
         });
 
@@ -187,11 +188,11 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
             failed: prev.failed + (txInfo.meta?.err ? 1 : 0),
             lastUpdate: new Date()
           };
-          console.log('📊 Stats updated:', newStats);
+          logger.log('📊 Stats updated:', newStats);
           return newStats;
         });
       } else {
-        console.log('❌ No transaction result in response');
+        logger.log('❌ No transaction result in response');
       }
     } catch (err) {
       console.error('Error fetching transaction details:', err);
@@ -207,13 +208,13 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     }
 
     try {
-      console.log('🚀 Starting transaction stream...');
+      logger.log('🚀 Starting transaction stream...');
       setError(null);
       setStats(prev => ({ ...prev, connectionStatus: 'connecting' }));
 
       // Unsubscribe from any existing subscription before creating a new one
       if (subscriptionIdRef.current) {
-        console.log('📡 Cleaning up old subscription before reconnecting...');
+        logger.log('📡 Cleaning up old subscription before reconnecting...');
         try {
           solanaWebSocketService.unsubscribeAll();
         } catch (err) {
@@ -223,27 +224,27 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       }
 
       // Connect to WebSocket service
-      console.log('🔗 Connecting to WebSocket service...');
-      console.log('🔗 Original WebSocket URL:', wsUrl);
+      logger.log('🔗 Connecting to WebSocket service...');
+      logger.log('🔗 Original WebSocket URL:', wsUrl);
 
       // Convert HTTP URL to WebSocket URL if needed
       const convertedWsUrl = SolanaWebSocketService.convertHttpToWebSocket(wsUrl);
-      console.log('🔗 Converted WebSocket URL:', convertedWsUrl);
+      logger.log('🔗 Converted WebSocket URL:', convertedWsUrl);
 
       await solanaWebSocketService.connect(convertedWsUrl);
-      console.log('🔗 WebSocket connected successfully');
+      logger.log('🔗 WebSocket connected successfully');
 
       // Subscribe to transactions
       const filter = filterByAccount ? { account: filterByAccount } :
                     filterByProgram ? { program: filterByProgram } : undefined;
 
-      console.log('📡 Subscribing to transactions with filter:', filter);
+      logger.log('📡 Subscribing to transactions with filter:', filter);
       subscriptionIdRef.current = await solanaWebSocketService.subscribeToTransactions(filter);
-      console.log('✅ Transaction subscription confirmed, ID:', subscriptionIdRef.current);
+      logger.log('✅ Transaction subscription confirmed, ID:', subscriptionIdRef.current);
 
       setIsStreaming(true);
       setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
-      console.log('🎉 Transaction stream started successfully');
+      logger.log('🎉 Transaction stream started successfully');
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to start streaming';
@@ -272,7 +273,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
   const fetchLocalSignatures = useCallback(async () => {
     try {
-      console.log('🔍 Fetching local signatures from RPC endpoint...');
+      logger.log('🔍 Fetching local signatures from RPC endpoint...');
       
       const requestBody = {
         jsonrpc: '2.0',
@@ -281,7 +282,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         params: []
       };
       
-      console.log('📤 Request body:', requestBody);
+      logger.log('📤 Request body:', requestBody);
       
       const response = await fetch(rpcUrl, {
         method: 'POST',
@@ -291,14 +292,14 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
+      logger.log('📡 Response status:', response.status);
+      logger.log('📡 Response ok:', response.ok);
 
       const data = await response.json();
-      console.log('📥 Local signatures response:', data);
+      logger.log('📥 Local signatures response:', data);
       
       if (data.result && data.result.value && Array.isArray(data.result.value)) {
-        console.log('✅ Local signatures received:', data.result.value.length, 'signatures');
+        logger.log('✅ Local signatures received:', data.result.value.length, 'signatures');
         
         // Process each signature using the unified processor
         // Process in reverse order so most recent appear at the top
@@ -308,7 +309,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           await processTransactionSignature(signature, signatureData.err);
         }
       } else {
-        console.log('❌ No local signatures found or invalid response');
+        logger.log('❌ No local signatures found or invalid response');
       }
     } catch (err) {
       console.error('Error fetching local signatures:', err);
@@ -330,18 +331,18 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   // Listen for transaction events
   useEffect(() => {
     const handleTransaction = (data: any) => {
-      console.log('🔌 WebSocket message received:', data);
+      logger.log('🔌 WebSocket message received:', data);
       
       if (data?.value?.signature) {
         const signature = data.value.signature;
-        console.log('✅ SIGNATURE FOUND:', signature);
-        console.log('📊 Log data:', data.value);
+        logger.log('✅ SIGNATURE FOUND:', signature);
+        logger.log('📊 Log data:', data.value);
         
         // Use the unified processor
         processTransactionSignature(signature, data.value.err);
       } else {
-        console.log('⚠️ No signature found in log notification');
-        console.log('🔍 Full log data:', data);
+        logger.log('⚠️ No signature found in log notification');
+        logger.log('🔍 Full log data:', data);
       }
     };
 
@@ -355,12 +356,12 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   // Listen for connection status changes
   useEffect(() => {
     const handleConnected = () => {
-      console.log('🔗 WebSocket connected');
+      logger.log('🔗 WebSocket connected');
       setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
     };
 
     const handleDisconnected = () => {
-      console.log('🔌 WebSocket disconnected');
+      logger.log('🔌 WebSocket disconnected');
       setStats(prev => ({ ...prev, connectionStatus: 'disconnected' }));
     };
 
@@ -396,7 +397,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   // Fetch local signatures when transaction list is empty
   useEffect(() => {
     if (fetchHistorical && transactions.length === 0 && isStreaming && stats.connectionStatus === 'connected') {
-      console.log('📭 Transaction list is empty, fetching local signatures...');
+      logger.log('📭 Transaction list is empty, fetching local signatures...');
       fetchLocalSignatures();
     }
   }, [fetchHistorical, transactions.length, isStreaming, stats.connectionStatus, fetchLocalSignatures]);
@@ -462,10 +463,10 @@ export async function getTokenBalance(address: string, tokenMint: string, rpcUrl
       body: JSON.stringify(rpcRequest),
     });
     const data = await response.json() as { result?: { value?: TokenAmount } };
-    console.log(data);
+    logger.log(data);
     return {tokenAmount: data?.result?.value, ata_address: tokenAccount.toBase58()};
   } catch (error) {
-    console.log(error);
+    logger.log(error);
   }
 }
 
@@ -493,7 +494,7 @@ export async function getAccountBalance(address: string, rpcUrl: string, commitm
       return uiAmount;
     }
   } catch (error) {
-    console.log(error);
+    logger.log(error);
     return 0;
   }
 }
@@ -515,10 +516,10 @@ export async function setAccount(address: string, lamports: number, rpcUrl: stri
       body: JSON.stringify(rpcRequest),
     });
     const data = await response.json() as { result?: { value?: any } };
-    console.log(data);
+    logger.log(data);
     return data?.result?.value;
   } catch (error) {
-    console.log(error);
+    logger.log(error);
   }
 }
 

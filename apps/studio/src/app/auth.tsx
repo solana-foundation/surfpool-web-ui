@@ -1,4 +1,5 @@
 import { Divider } from '@surfpool/ui'
+import { logger } from '@surfpool/shared'
 import { useWorkspaceContext } from '@/contexts/workspace-context'
 import type { Metadata } from 'next'
 import { useEffect, useState } from 'react'
@@ -53,13 +54,13 @@ export default function Auth() {
   }  
 
   const handleSignInInstead = async () => {
-    console.log('signInInstead')
+    logger.log('signInInstead')
     setOnboardingState((prev) => ({ ...prev, signIn: true, createAccount: false }))
     goToStep(0)
   }
 
   const handleSignUpInstead = async () => {
-    console.log('signUpInstead')
+    logger.log('signUpInstead')
     setOnboardingState((prev) => ({ ...prev, signIn: false, createAccount: true }))
     goToStep(1)
   }
