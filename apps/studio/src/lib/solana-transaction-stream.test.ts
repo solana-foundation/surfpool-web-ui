@@ -4,49 +4,8 @@ import {
   formatTime,
   getTransactionStatus,
   getTransactionPrograms,
-  TransactionInfo,
 } from './solana-transaction-stream';
-
-function makeTx(overrides: Partial<TransactionInfo> = {}): TransactionInfo {
-  return {
-    signatures: ['sig123'],
-    slot: 100,
-    err: null,
-    memo: null,
-    blockTime: 1700000000,
-    meta: {
-      err: null,
-      fee: 5000,
-      preBalances: [1000000],
-      postBalances: [995000],
-      innerInstructions: [],
-      logMessages: [],
-      preTokenBalances: [],
-      postTokenBalances: [],
-      rewards: [],
-      loadedAddresses: null,
-      returnData: null,
-      computeUnitsConsumed: 200,
-    },
-    transaction: {
-      message: {
-        accountKeys: ['addr1', 'addr2'],
-        recentBlockhash: 'hash123',
-        instructions: [
-          { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },
-          { programId: '11111111111111111111111111111111' },
-        ],
-        header: {
-          numRequiredSignatures: 1,
-          numReadonlySignedAccounts: 0,
-          numReadonlyUnsignedAccounts: 1,
-        },
-      },
-      signatures: ['sig123'],
-    },
-    ...overrides,
-  };
-}
+import { makeTx } from '@/test-utils';
 
 describe('formatSignature', () => {
   it('returns the signature unchanged', () => {
