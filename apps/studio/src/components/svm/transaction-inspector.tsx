@@ -30,20 +30,10 @@ import { Badge, brandBlue, Dialog, DialogBody } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AddressDisplay from './address-display';
-import TokenAmountDisplay from './token-amount-display';
 import {
-  LamportsDisplay,
-  OwnerDisplay,
-  DataDisplay,
-  LamportsComparison,
-  PermissionsBox,
   AccountLabels,
-  OwnerComparison,
-  DataComparison,
   AccountDetails,
   UpdateAccountDetails,
-  type AccountDetailsProps,
-  type UpdateAccountDetailsProps,
 } from './transaction-inspector-components';
 
 // Client-side only component - will be hydrated on the client
