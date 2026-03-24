@@ -4,40 +4,23 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { truncateAddress as truncateAddressUtil } from '@/lib/address-utils';
 import { getTransactionStatus, TransactionInfo, useTransactionInspector } from '@/lib/solana-transaction-stream';
 import {
-  type AccountData,
-  type AccountChange,
-  type AccountState,
-  type InstructionProfile,
-  type TransactionProfileData,
-  type ReadonlyAccountState,
-  type TransactionProfile,
-  getProgramType,
-  getProgramName,
-  decodeAccountData,
-  mergeTransactionProfiles,
-  processTransactionProfile,
-  computeHexDiff,
-  formatHexDump,
-  formatHexOnly,
-  getHexData,
-  getHexDataForUpdates,
-  hasJsonData,
   extractProgramData,
   findChangedPaths,
+  getHexData,
+  getHexDataForUpdates,
+  getProgramName,
+  hasJsonData,
+  mergeTransactionProfiles,
+  processTransactionProfile,
 } from '@/lib/transaction-inspector-utils';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { Badge, brandBlue, Dialog, DialogBody } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import AddressDisplay from './address-display';
-import {
-  AccountLabels,
-  AccountDetails,
-  UpdateAccountDetails,
-} from './transaction-inspector-components';
+import { AccountDetails, AccountLabels, UpdateAccountDetails } from './transaction-inspector-components';
 
 // Client-side only component - will be hydrated on the client
-
 
 // Wrap external library imports in try-catch for Fast Refresh compatibility
 let jsonDiff: any;
@@ -68,7 +51,6 @@ interface TransactionInspectorProps {
   fetchHistorical?: boolean;
   initialTransactionSignature?: string;
 }
-
 
 export default function TransactionInspector({
   rpcUrl: propRpcUrl,
@@ -1246,7 +1228,14 @@ export default function TransactionInspector({
 
                                         // Debug logging
                                         if (hasChanges) {
-                                          console.log(`🔎 Account ${address.slice(0, 8)}... hasChanges:`, hasChanges, 'type:', accountState.accountChange?.type, 'data:', accountState.accountChange?.data);
+                                          console.log(
+                                            `🔎 Account ${address.slice(0, 8)}... hasChanges:`,
+                                            hasChanges,
+                                            'type:',
+                                            accountState.accountChange?.type,
+                                            'data:',
+                                            accountState.accountChange?.data
+                                          );
                                         }
                                         const isFirst = accountIndex === 0;
                                         const isLast =
