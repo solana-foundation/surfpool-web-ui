@@ -1,7 +1,9 @@
 "use client"
 
+import { logger } from '@surfpool/shared';
+
 export default function Home() {
-  console.log("Default")
+  logger.log("Default")
   return (
     <div>
     </div>

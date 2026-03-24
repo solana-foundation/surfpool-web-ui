@@ -11,18 +11,14 @@ import { useWorkspaceContext } from '@/contexts/workspace-context';
 import { ArrowRightStartOnRectangleIcon, PlayIcon } from '@heroicons/react/16/solid';
 import { CommandLineIcon } from '@heroicons/react/24/solid';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function Dashboard({ children }: { children: React.ReactNode }) {
   let workspaceContext = useWorkspaceContext();
-  let user = workspaceContext?.data?.user!;
+  let user = workspaceContext?.data?.user;
   let [isConfirmSignOutOpen, setConfirmSignOutOpen] = useState(false);
 
   const pathname = usePathname();
-
-  useEffect(() => {}, [workspaceContext?.data]);
-
-  // Create a grapql query to get "teams" and "workspaces" from the user. if there are no teams, we will be displaying 2 inputs in the dialog.
 
   return (
     <StackedLayout

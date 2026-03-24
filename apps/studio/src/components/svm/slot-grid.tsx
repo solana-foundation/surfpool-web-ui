@@ -6,6 +6,7 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon } from '@heroicons/react/24/solid';
+import { getTimeUnitInMs, logger } from '@surfpool/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
@@ -118,13 +119,13 @@ export const SlotsGrid: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('📡 Time travel response:', data);
+        logger.log('📡 Time travel response:', data);
 
         if (data.result) {
-          console.log('✅ Time travel successful:', data.result);
+          logger.log('✅ Time travel successful:', data.result);
 
           // Trigger full refresh of slot grid
-          console.log('🔄 Triggering full slot grid refresh after time travel');
+          logger.log('🔄 Triggering full slot grid refresh after time travel');
 
           // Reset animation state
           setRedRects(new Set());
@@ -165,27 +166,6 @@ export const SlotsGrid: React.FC = () => {
     }
   };
 
-  // Helper function to convert time units to milliseconds
-  const getTimeUnitInMs = (unit: string): number => {
-    switch (unit) {
-      case 'seconds':
-        return 1000;
-      case 'minutes':
-        return 60 * 1000;
-      case 'hours':
-        return 60 * 60 * 1000;
-      case 'days':
-        return 24 * 60 * 60 * 1000;
-      case 'weeks':
-        return 7 * 24 * 60 * 60 * 1000;
-      case 'months':
-        return 30 * 24 * 60 * 60 * 1000; // Approximate
-      case 'years':
-        return 365 * 24 * 60 * 60 * 1000; // Approximate
-      default:
-        return 1000;
-    }
-  };
 
   // Export snapshot
   const exportSnapshot = async () => {
@@ -204,7 +184,7 @@ export const SlotsGrid: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('📸 Export snapshot response:', data);
+        logger.log('📸 Export snapshot response:', data);
 
         if (data.result) {
           // Create a blob from the JSON data
@@ -228,7 +208,7 @@ export const SlotsGrid: React.FC = () => {
           document.body.removeChild(link);
           URL.revokeObjectURL(url);
 
-          console.log('✅ Snapshot exported successfully');
+          logger.log('✅ Snapshot exported successfully');
         } else {
           console.error('❌ Export snapshot failed:', data.error);
         }
@@ -314,16 +294,16 @@ export const SlotsGrid: React.FC = () => {
   // Start WebSocket subscription to slot updates
   const startSlotSubscription = useCallback(async () => {
     try {
-      console.log('🔗 Connecting to slot WebSocket:', wsUrl);
+      logger.log('🔗 Connecting to slot WebSocket:', wsUrl);
 
       // Connect to WebSocket service
       await solanaWebSocketService.connect(wsUrl);
-      console.log('✅ Slot WebSocket connected');
+      logger.log('✅ Slot WebSocket connected');
       setWsConnected(true);
 
       // Subscribe to slot updates
       subscriptionIdRef.current = await solanaWebSocketService.subscribeToSlots();
-      console.log('✅ Slot subscription confirmed with ID:', subscriptionIdRef.current);
+      logger.log('✅ Slot subscription confirmed with ID:', subscriptionIdRef.current);
     } catch (error) {
       console.error('❌ Error starting slot subscription:', error);
       setWsConnected(false);
@@ -332,11 +312,11 @@ export const SlotsGrid: React.FC = () => {
 
   // Stop WebSocket subscription
   const stopSlotSubscription = useCallback(() => {
-    console.log('🔌 Stopping slot subscription');
+    logger.log('🔌 Stopping slot subscription');
     solanaWebSocketService.unsubscribeAll();
     subscriptionIdRef.current = null;
     setWsConnected(false);
-    console.log('🔗 Connection state updated: wsConnected = false');
+    logger.log('🔗 Connection state updated: wsConnected = false');
   }, []);
 
   // Listen for slot events
@@ -382,12 +362,12 @@ export const SlotsGrid: React.FC = () => {
   // Listen for connection status changes
   useEffect(() => {
     const handleConnected = () => {
-      console.log('🔗 WebSocket connected');
+      logger.log('🔗 WebSocket connected');
       setWsConnected(true);
     };
 
     const handleDisconnected = () => {
-      console.log('🔌 WebSocket disconnected');
+      logger.log('🔌 WebSocket disconnected');
       setWsConnected(false);
     };
 
@@ -435,8 +415,8 @@ export const SlotsGrid: React.FC = () => {
       observer.disconnect();
       window.removeEventListener('resize', handleWindowResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Remove canvasGridHeight dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: ResizeObserver handles canvasGridHeight updates
+  }, []);
 
   // Draw effect: only draws, does not set up interval
   useEffect(() => {
@@ -577,7 +557,7 @@ export const SlotsGrid: React.FC = () => {
     const fallbackTimer = setTimeout(() => {
       if (canvasSize.width === 0 && containerRef.current) {
         const fallbackWidth = containerRef.current.clientWidth || 800; // Default to 800px if still 0
-        console.log('🔄 Fallback: setting canvas width to:', fallbackWidth);
+        logger.log('🔄 Fallback: setting canvas width to:', fallbackWidth);
         setCanvasSize({ width: fallbackWidth, height: canvasGridHeight });
       }
     }, 1000); // Wait 1 second
@@ -599,13 +579,13 @@ export const SlotsGrid: React.FC = () => {
     if (isClient) {
       fetchEpochData();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: fetchEpochData is stable but not memoized
   }, [isClient]);
 
   // Start WebSocket subscription once on mount
   useEffect(() => {
     if (isClient && !subscriptionIdRef.current) {
-      console.log('🔗 Starting WebSocket subscription');
+      logger.log('🔗 Starting WebSocket subscription');
       startSlotSubscription();
 
       return () => {

@@ -642,12 +642,6 @@ function SectionDeploy() {
 
         <div className="space-y-6">
           <div className="rounded-lg border border-zinc-900 bg-zinc-950/50 p-6">
-            <div className="mb-2 font-semibold">IDL-to-SQL pipeline</div>
-            <p className="text-sm leading-relaxed text-zinc-500">
-              Surfpool introduces a unique IDL-to-SQL pipeline, allowing developers to keep their data in sync with deployments.
-            </p>
-          </div>
-          <div className="rounded-lg border border-zinc-900 bg-zinc-950/50 p-6">
             <div className="mb-2 font-semibold">Designed local-first</div>
             <p className="text-sm leading-relaxed text-zinc-500">
               On-disk keypairs work for local tests but spell disaster on mainnet—$2B lost yearly to compromised private keys. Use multisig, and best practices.

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { logger } from '@surfpool/shared';
 
 export interface WebSocketMessage {
   type: 'slot' | 'transaction';
@@ -55,22 +56,22 @@ class SolanaWebSocketService extends EventEmitter {
     return new Promise((resolve, reject) => {
       // If already connected, resolve immediately
       if (this.ws?.readyState === WebSocket.OPEN) {
-        console.log('🔗 WebSocket already connected');
+        logger.log('🔗 WebSocket already connected');
         resolve();
         return;
       }
 
       // If connecting, wait for the existing connection to complete
       if (this.isConnecting) {
-        console.log('⏳ Connection already in progress, waiting for completion...');
+        logger.log('⏳ Connection already in progress, waiting for completion...');
         
         // Wait for connection to complete or fail
         const checkConnection = () => {
           if (this.ws?.readyState === WebSocket.OPEN) {
-            console.log('🔗 Existing connection completed successfully');
+            logger.log('🔗 Existing connection completed successfully');
             resolve();
           } else if (this.ws?.readyState === WebSocket.CLOSED && !this.isConnecting) {
-            console.log('🔌 Existing connection failed, retrying...');
+            logger.log('🔌 Existing connection failed, retrying...');
             // Retry the connection after a short delay
             setTimeout(() => {
               this.connect(wsUrl).then(resolve).catch(reject);
@@ -87,14 +88,14 @@ class SolanaWebSocketService extends EventEmitter {
 
       // If WebSocket exists but is in a bad state, clean it up
       if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
-        console.log('🧹 Cleaning up existing WebSocket connection');
+        logger.log('🧹 Cleaning up existing WebSocket connection');
         this.ws.close();
         this.ws = null;
       }
 
-      console.log('🔗 Attempting to connect to:', wsUrl);
-      console.log('🔗 WebSocket URL type:', typeof wsUrl);
-      console.log('🔗 WebSocket URL length:', wsUrl?.length);
+      logger.log('🔗 Attempting to connect to:', wsUrl);
+      logger.log('🔗 WebSocket URL type:', typeof wsUrl);
+      logger.log('🔗 WebSocket URL length:', wsUrl?.length);
       
       // Validate WebSocket URL format
       if (!wsUrl || typeof wsUrl !== 'string') {
@@ -110,7 +111,7 @@ class SolanaWebSocketService extends EventEmitter {
       this.wsUrl = wsUrl;
 
       try {
-        console.log('🔗 Creating WebSocket connection...');
+        logger.log('🔗 Creating WebSocket connection...');
         this.ws = new WebSocket(wsUrl);
         
         this.connectionTimeout = setTimeout(() => {
@@ -126,7 +127,7 @@ class SolanaWebSocketService extends EventEmitter {
             clearTimeout(this.connectionTimeout);
             this.connectionTimeout = null;
           }
-          console.log('🔗 WebSocket connected successfully');
+          logger.log('🔗 WebSocket connected successfully');
           this.emit('connected');
           resolve();
         };
@@ -153,13 +154,13 @@ class SolanaWebSocketService extends EventEmitter {
             clearTimeout(this.connectionTimeout);
             this.connectionTimeout = null;
           }
-          console.log('🔌 WebSocket closed:', event.code, event.reason);
+          logger.log('🔌 WebSocket closed:', event.code, event.reason);
           this.emit('disconnected', event);
           
           // Attempt reconnection if not manually closed
           if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            console.log(`🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+            logger.log(`🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
             setTimeout(() => {
               this.connect(wsUrl).catch(console.error);
             }, this.reconnectDelay * this.reconnectAttempts);
@@ -253,12 +254,12 @@ class SolanaWebSocketService extends EventEmitter {
       }
 
       try {
-        console.log(`📤 Sending ${type} subscription message:`, message);
+        logger.log(`📤 Sending ${type} subscription message:`, message);
         this.ws.send(JSON.stringify(message));
         
         // Wait for subscription confirmation
         const onSubscription = (data: any) => {
-          console.log(`📥 Received subscription response for ${type}:`, data);
+          logger.log(`📥 Received subscription response for ${type}:`, data);
           
           // Check for successful subscription response
           if (data.id === message.id) {
@@ -266,7 +267,7 @@ class SolanaWebSocketService extends EventEmitter {
               this.removeListener('subscription', onSubscription);
               
               const subscriptionId = data.result;
-              console.log(`✅ ${type} subscription confirmed with ID:`, subscriptionId);
+              logger.log(`✅ ${type} subscription confirmed with ID:`, subscriptionId);
               
               // Store subscription info with actual server ID
               this.subscriptions.set(subscriptionId, {

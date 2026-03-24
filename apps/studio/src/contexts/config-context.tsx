@@ -1,3 +1,4 @@
+import { logger } from '@surfpool/shared'
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
 interface Config {
@@ -42,16 +43,17 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       // Try local /config endpoint first
       let response = await fetch('/config')
       if (!response.ok) {
-        console.log('⚠️ Local /config failed, trying http://127.0.0.1:18488/config')
+        const fallbackUrl = process.env.NEXT_PUBLIC_STUDIO_URL || 'http://127.0.0.1:18488'
+        logger.log(`⚠️ Local /config failed, trying ${fallbackUrl}/config`)
         // Fallback to the full URL
-        response = await fetch('http://127.0.0.1:18488/config')
+        response = await fetch(`${fallbackUrl}/config`)
         if (!response.ok) {
           throw new Error(`Failed to fetch config from both endpoints: ${response.status}`)
         }
       }
       
       const data: Config = await response.json()
-      console.log('📋 Config loaded:', data)
+      logger.log('📋 Config loaded:', data)
       setConfig(data)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch config'

@@ -260,17 +260,11 @@ action "initialize" "svm::process_instructions" {
     }
 }
 
-action "index" "svm::deploy_subgraph" {
-    // This reference creates another dependency: index runs after deploy
-    program_id = action.deploy.program_id
-    program_idl = action.deploy.program_idl
-}
 ```
 
 Surfpool automatically determines:
 - `deploy` runs first (no dependencies)
-- `initialize` and `index` run after `deploy` (reference its outputs)
-- `initialize` and `index` can run in parallel (no dependency between them)
+- `initialize` runs after `deploy` (references its outputs)
 
 ### Stateful Execution
 
@@ -295,7 +289,6 @@ runbooks/
 │   ├── signers.localnet.tx      # Local keypair config
 │   ├── signers.devnet.tx        # Web wallet for devnet
 │   ├── signers.mainnet.tx       # Multisig for mainnet
-│   └── subgraphs.localnet.tx    # Indexing configuration
 ├── operations/
 │   ├── main.tx                  # Operational tasks
 │   └── signers.localnet.tx
@@ -306,7 +299,6 @@ The separation is intentional:
 
 - **`main.tx`** — The deployment logic. Network-agnostic. This file should rarely change once working.
 - **`signers.{network}.tx`** — Signer configuration per network. Swap keypairs for multisig without touching `main.tx`.
-- **`subgraphs.{network}.tx`** — Indexing directives. Usually only needed for local development.
 
 ### Example: main.tx
 
@@ -437,80 +429,6 @@ action "setup" "svm::setup_surfnet" {
     }
 }
 ```
-
-### svm::deploy_subgraph
-
-Set up account indexing:
-
-```hcl
-action "index" "svm::deploy_subgraph" {
-    program_id = action.deploy.program_id
-    program_idl = action.deploy.program_idl
-    slot = action.deploy.slot
-    pda {
-        type = "Price"
-        instruction {
-            name = "fetch_price"
-            account_name = "price"
-        }
-    }
-}
-```
-
----
-
-## Offchain Directives
-
-Surfpool can automatically index your program's accounts and expose them through a **GraphQL API**.
-
-### How It Works
-
-The `subgraphs.localnet.tx` file defines what to index:
-
-```hcl
-action "price_pda" "svm::deploy_subgraph" {
-    program_id = action.deploy_price_feed.program_id
-    program_idl = action.deploy_price_feed.program_idl
-    slot = action.deploy_price_feed.slot
-    pda {
-        type = "Price"
-        instruction {
-            name = "fetch_price"
-            account_name = "price"
-        }
-    }
-}
-```
-
-This tells Surfpool: "Index all `Price` accounts created by the `fetch_price` instruction."
-
-### The Indexing Engine
-
-Surfpool embeds a data indexing engine that:
-
-- Watches your Surfnet for account changes in real-time
-- Deserializes account data using your program's IDL
-- Exposes a GraphQL API with auto-generated schema
-- Uses your Rust doc comments to generate field descriptions
-
-### Querying Indexed Data
-
-Once deployed, query your data via GraphQL:
-
-```graphql
-query {
-  price(first: 10, orderBy: slot, orderDirection: desc) {
-    publicKey
-    value
-    timestamp
-    slot
-  }
-}
-```
-
-No separate indexer setup. No waiting for subgraph deployments. No infrastructure to manage. Your accounts are queryable immediately.
-
-Build your frontend locally with a real GraphQL endpoint from minute one.
 
 ---
 
