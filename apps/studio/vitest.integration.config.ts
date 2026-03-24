@@ -13,13 +13,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/*.integration.test.*'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'lcov'],
-      reportsDirectory: './coverage',
-      include: ['src/**'],
-      exclude: ['out/**', '.next/**', 'node_modules/**'],
-    },
+    include: ['src/**/*.integration.test.ts'],
+    globalSetup: ['./src/integration-setup.ts'],
+    testTimeout: 30000,
   },
 });

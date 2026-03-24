@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
