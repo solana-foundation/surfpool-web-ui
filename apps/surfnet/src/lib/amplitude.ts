@@ -1,6 +1,6 @@
 import * as amplitude from '@amplitude/analytics-browser';
 
-const AMPLITUDE_API_KEY = 'cf542832d287902b9d3d9e89168219ec';
+const AMPLITUDE_API_KEY = process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY || '';
 
 let initialized = false;
 

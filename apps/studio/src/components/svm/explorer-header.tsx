@@ -7,14 +7,14 @@ import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/s
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { Faucet } from '@surfpool/svm';
 import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
-import { getTimeUnitInMs, logger } from '@surfpool/shared';
+import { getTimeUnitInMs, logger, MONEYMQ_ENDPOINT, SURFNET_DOMAIN } from '@surfpool/shared';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
 import { LabeledLink } from './labeled-link';
 
 const moneyMQClient = {
   config: {
-    endpoint: 'http://localhost:8488',
+    endpoint: MONEYMQ_ENDPOINT,
     // endpoint: 'https://surfnet-sandbox.money.mq',
   },
 };
@@ -1274,7 +1274,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                         maxLength={20}
                         className="w-24 bg-transparent text-right text-sm font-medium text-white placeholder-zinc-600 focus:outline-none"
                       />
-                      <span className="text-sm text-white">.surfnet.dev</span>
+                      <span className="text-sm text-white">.{SURFNET_DOMAIN}</span>
                       <div className="ml-1 flex h-5 w-5 items-center justify-center">
                         {isCheckingSubdomain && (
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00D4FF]"></div>
@@ -1773,10 +1773,10 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
                       // Build the published URL from surfnet info or fallback to subdomain
                       const surfnetUrl = surfnetInfo?.subdomain
-                        ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                        ? `https://${surfnetInfo.subdomain}.${SURFNET_DOMAIN}`
                         : selectedPricingTier === 'lite'
-                          ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
-                          : `https://${subdomain}.surfnet.dev`;
+                          ? `https://${credentials.keyPrefix.split('/')[1]}.${SURFNET_DOMAIN}`
+                          : `https://${subdomain}.${SURFNET_DOMAIN}`;
                       setPublishedUrl(surfnetUrl);
                     } else if (notification.status === 'Failed') {
                       console.error('❌ Snapshot import failed:', notification.error);
@@ -1804,10 +1804,10 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               // If WebSocket fails, still show success since upload worked
               setPublishPhase('completed');
               const surfnetUrl = surfnetInfo?.subdomain
-                ? `https://${surfnetInfo.subdomain}.surfnet.dev`
+                ? `https://${surfnetInfo.subdomain}.${SURFNET_DOMAIN}`
                 : selectedPricingTier === 'lite'
-                  ? `https://${credentials.keyPrefix.split('/')[1]}.surfnet.dev`
-                  : `https://${subdomain}.surfnet.dev`;
+                  ? `https://${credentials.keyPrefix.split('/')[1]}.${SURFNET_DOMAIN}`
+                  : `https://${subdomain}.${SURFNET_DOMAIN}`;
               setPublishedUrl(surfnetUrl);
             }
           }}

@@ -1,3 +1,5 @@
+import { DEFAULT_S3_REGION } from '@surfpool/shared';
+
 /**
  * S3 Upload utility for uploading surfnet exports using temporary credentials
  */
@@ -48,7 +50,7 @@ export async function uploadToS3(
   const key = `${keyPrefix}/${filename}`;
 
   // Create the S3 endpoint URL
-  const region = 'us-east-2';
+  const region = DEFAULT_S3_REGION;
   const host = `${bucket}.s3.${region}.amazonaws.com`;
   const url = `https://${host}/${key}`;
 

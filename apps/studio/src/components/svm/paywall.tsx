@@ -2,6 +2,7 @@
 
 import { Dialog, DialogBody } from '@surfpool/ui';
 import { Button } from '@surfpool/ui';
+import { CLOUD_URL } from '@surfpool/shared';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import React, { useState, useEffect } from 'react';
 
@@ -218,7 +219,7 @@ export function PaywallContent({ plans, loading, stars }: PaywallContentProps) {
                                     disabled={!plan.available}
                                     onClick={() => {
                                       if (plan.available) {
-                                        window.open(`https://cloud.txtx.run/?price_id=${plan.price_id}&origin=studio`, '_blank');
+                                        window.open(`${CLOUD_URL}/?price_id=${plan.price_id}&origin=studio`, '_blank');
                                       }
                                     }}
                                   >

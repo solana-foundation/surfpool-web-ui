@@ -1,5 +1,7 @@
 'use client';
 
+import { DEFAULT_OLLAMA_URL } from '@surfpool/shared';
+
 export type AIProvider = 'claude' | 'gemini' | 'groq' | 'ollama' | 'openai';
 
 export interface AIModel {
@@ -135,7 +137,7 @@ export interface OllamaStatus {
   models: AIModel[];
 }
 
-export async function fetchOllamaStatus(baseUrl = 'http://localhost:11434'): Promise<OllamaStatus> {
+export async function fetchOllamaStatus(baseUrl = DEFAULT_OLLAMA_URL): Promise<OllamaStatus> {
   try {
     const response = await fetch(`${baseUrl}/api/tags`, {
       method: 'GET',
@@ -205,7 +207,7 @@ export function getApiKey(provider: AIProvider): string | null {
   };
   // Ollama doesn't need a key, return default URL if not set
   if (provider === 'ollama') {
-    return localStorage.getItem(keyMap[provider]) || 'http://localhost:11434';
+    return localStorage.getItem(keyMap[provider]) || DEFAULT_OLLAMA_URL;
   }
   return localStorage.getItem(keyMap[provider]);
 }
