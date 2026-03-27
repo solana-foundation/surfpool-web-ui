@@ -8,6 +8,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json';
 import javascript from 'react-syntax-highlighter/dist/cjs/languages/prism/javascript';
 import typescript from 'react-syntax-highlighter/dist/cjs/languages/prism/typescript';
+import { Mermaid } from '../components/mermaid';
 
 SyntaxHighlighter.registerLanguage('json', json);
 SyntaxHighlighter.registerLanguage('javascript', javascript);
@@ -300,6 +301,9 @@ export default function Home() {
                       code({ className, children, ...props }) {
                         const match = /language-(\w+)/.exec(className || '');
                         const isInline = !match;
+                        if (match && match[1] === 'mermaid') {
+                          return <Mermaid chart={String(children).replace(/\n$/, '')} />;
+                        }
                         return !isInline ? (
                           <SyntaxHighlighter
                             style={oneDark}

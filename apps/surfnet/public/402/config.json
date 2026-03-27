@@ -1,0 +1,19 @@
+{
+  "network_name": "402 - Builders Network",
+  "network_handle": "Solana Foundation",
+  "network_description": "A dedicated ephemeral Solana network for builders integrating x402 payments and token operations.",
+  "network_url": "https://402.surfnet.dev:8899",
+  "rpc_url": "https://402.surfnet.dev:8899",
+  "ws_url": "https://402.surfnet.dev:8900",
+  "explorer_cluster_query": "cluster=custom&customUrl=https://402.surfnet.dev:8899",
+  "network_banner_image_url": "402/banner.jpg",
+  "network_logo_image_url": "402/logo.jpg",
+  "primary_color": "#8B5CF6",
+  "secondary_color": "#EC4899",
+  "primary_button": {
+    "label": "payments.org",
+    "url": "https://payments.org",
+    "color": "#8B5CF6"
+  },
+  "faucet_enabled": true
+}
