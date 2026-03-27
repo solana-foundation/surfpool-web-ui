@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build studio app
+        run: pnpm --filter studio run build
+        env:
+          NEXT_PUBLIC_NHOST_AUTH_URL: ${{ secrets.NEXT_PUBLIC_NHOST_AUTH_URL }}
+          NEXT_PUBLIC_NHOST_GRAPHQL_URL: ${{ secrets.NEXT_PUBLIC_NHOST_GRAPHQL_URL }}
+          NEXT_PUBLIC_NHOST_STORAGE_URL: ${{ secrets.NEXT_PUBLIC_NHOST_STORAGE_URL }}
+          NEXT_PUBLIC_NHOST_FUNCTIONS_URL: ${{ secrets.NEXT_PUBLIC_NHOST_FUNCTIONS_URL }}
+
+      - name: Zip dist folder
+        run: |
+          cd apps/studio/out
+          zip -r ../../../studio-dist.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: studio-dist.zip
