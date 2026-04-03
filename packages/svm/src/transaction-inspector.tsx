@@ -1,325 +1,27 @@
 'use client';
 
 import { truncateAddress as truncateAddressUtil } from './lib/address-utils';
-import { analyzeHexDiff } from './lib/hex-diff-analyzer';
+import {
+  computeHexDiff,
+  getProgramName,
+  getProgramType,
+  mergeTransactionProfiles,
+  processTransactionProfile,
+} from './lib/transaction-profile-utils';
 import { getTransactionStatus, TransactionInfo, useTransactionInspector } from './lib/solana-transaction-stream';
+import {
+  ComputeUnitBar,
+  InstructionProfileCard,
+  LamportsComparison,
+  LamportsDisplay,
+  LogsBlock,
+} from './transaction-profile-components';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { Badge, Dialog, DialogBody } from '@surfpool/ui';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getTransactionExplorerUrl, logger } from '@surfpool/shared';
 import AddressDisplay from './address-display';
-import TokenAmountDisplay from './token-amount-display';
 
-// TypeScript interfaces based on the transaction profile structure
-interface AccountData {
-  lamports: number;
-  json?:
-    | {
-        program: string;
-        parsed: Record<string, any>;
-        space: number;
-      }
-    | [string, string]; // Can be parsed JSON, [data, encoding], or decoded bytes
-  bytes: number[];
-  owner: string;
-  executable: boolean;
-  rentEpoch: number;
-  space: number;
-}
-
-interface AccountChange {
-  type: 'create' | 'update' | 'delete' | 'unchanged';
-  data?: AccountData | AccountData[];
-}
-
-interface AccountState {
-  type: 'writable' | 'readonly';
-  accountChange?: AccountChange;
-}
-
-interface InstructionProfile {
-  accountStates: Record<string, AccountState>;
-  computeUnitsConsumed: number;
-  logMessages: string[];
-  errorMessage: string | null;
-}
-
-interface TransactionProfileData {
-  accountStates: Record<string, AccountState>;
-  computeUnitsConsumed: number;
-  logMessages: string[];
-  errorMessage: string | null;
-}
-
-interface ReadonlyAccountState {
-  lamports: number;
-  data: [string, string]; // [data, encoding]
-  owner: string;
-  executable: boolean;
-  rentEpoch: number;
-  space: number;
-}
-
-interface TransactionProfile {
-  slot: number;
-  key: string;
-  instructionProfiles: InstructionProfile[];
-  transactionProfile: TransactionProfileData;
-  readonlyAccountStates: Record<string, ReadonlyAccountState>;
-}
-const getProgramType = (address: string): string | undefined => {
-  switch (address) {
-    case '11111111111111111111111111111111':
-      return 'SYSTEM PROGRAM';
-    case 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA':
-      return 'TOKEN PROGRAM';
-    case 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL':
-      return 'ASSOCIATED TOKEN PROGRAM';
-    case 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4':
-      return 'JUP PROGRAM';
-    case 'ComputeBudget111111111111111111111111111111':
-      return 'COMPUTE BUDGET PROGRAM';
-    default:
-      return undefined;
-  }
-};
-const getProgramName = (address: string): string => {
-  const programType = getProgramType(address);
-  if (programType) {
-    return programType;
-  }
-  return address;
-};
-
-// Utility functions for decoding account data
-const decodeAccountData = (data: any): any => {
-  // If data is already an array of numbers (decoded bytes), return as is
-  if (Array.isArray(data) && data.every((item) => typeof item === 'number')) {
-    return data;
-  }
-
-  // If data is an array with encoding info [data, encoding]
-  if (Array.isArray(data) && data.length === 2 && typeof data[0] === 'string' && typeof data[1] === 'string') {
-    const [encodedData, encoding] = data;
-
-    try {
-      switch (encoding) {
-        case 'base64':
-          // Decode base64 to bytes
-          const base64Bytes = atob(encodedData);
-          return Array.from(base64Bytes, (char) => char.charCodeAt(0));
-
-        case 'base58':
-          // For base58, we'll keep it as a string for now since it's typically used for addresses
-          // If you need actual base58 decoding, you'd need a base58 library
-          return encodedData;
-
-        default:
-          // Unknown encoding, return as is
-          return data;
-      }
-    } catch (error) {
-      console.warn('Failed to decode data:', error);
-      return data;
-    }
-  }
-
-  // If data is already parsed JSON, return as is
-  return data;
-};
-
-const mergeTransactionProfiles = (jsonParsedProfile: any, base64Profile: any): any => {
-  // Deep clone the jsonParsed profile as the base
-  const mergedProfile = JSON.parse(JSON.stringify(jsonParsedProfile));
-
-  // Helper function to merge account data
-  const mergeAccountData = (jsonParsedData: any, base64Data: any): any => {
-    if (!jsonParsedData || !base64Data) return jsonParsedData || base64Data;
-
-    const merged = { ...jsonParsedData };
-
-    // Set the json field from jsonParsed profile
-    if (jsonParsedData.data) {
-      merged.json = jsonParsedData.data;
-    }
-
-    // Set the bytes field from base64 profile
-    if (base64Data.data) {
-      merged.bytes = decodeAccountData(base64Data.data);
-    }
-
-    return merged;
-  };
-
-  // Helper function to merge account states
-  const mergeAccountStates = (jsonParsedStates: any, base64States: any): any => {
-    if (!jsonParsedStates || !base64States) return jsonParsedStates || base64States;
-
-    const mergedStates = { ...jsonParsedStates };
-
-    Object.keys(base64States).forEach((address) => {
-      if (mergedStates[address]) {
-        const jsonParsedState = mergedStates[address];
-        const base58State = base64States[address];
-
-        if (jsonParsedState.accountChange?.data && base58State.accountChange?.data) {
-          if (Array.isArray(jsonParsedState.accountChange.data)) {
-            // Handle update case where data is an array
-            mergedStates[address].accountChange.data = jsonParsedState.accountChange.data.map(
-              (item: any, index: number) => {
-                const base58Item = Array.isArray(base58State.accountChange.data)
-                  ? base58State.accountChange.data[index]
-                  : base58State.accountChange.data;
-                return mergeAccountData(item, base58Item);
-              }
-            );
-          } else {
-            // Handle single data object
-            mergedStates[address].accountChange.data = mergeAccountData(
-              jsonParsedState.accountChange.data,
-              base58State.accountChange.data
-            );
-          }
-        }
-      }
-    });
-
-    logger.log('🔍 Merged states:', mergedStates);
-    return mergedStates;
-  };
-
-  // Merge instruction profiles
-  if (mergedProfile.instructionProfiles && base64Profile.instructionProfiles) {
-    mergedProfile.instructionProfiles = mergedProfile.instructionProfiles.map((instruction: any, index: number) => {
-      const base64Instruction = base64Profile.instructionProfiles[index];
-      if (base64Instruction) {
-        return {
-          ...instruction,
-          accountStates: mergeAccountStates(instruction.accountStates, base64Instruction.accountStates),
-        };
-      }
-      return instruction;
-    });
-  }
-
-  // Merge readonly account states
-  if (mergedProfile.readonlyAccountStates && base64Profile.readonlyAccountStates) {
-    Object.keys(base64Profile.readonlyAccountStates).forEach((address) => {
-      if (mergedProfile.readonlyAccountStates[address]) {
-        mergedProfile.readonlyAccountStates[address] = mergeAccountData(
-          mergedProfile.readonlyAccountStates[address],
-          base64Profile.readonlyAccountStates[address]
-        );
-      }
-    });
-  }
-
-  return mergedProfile;
-};
-
-const processTransactionProfile = (profile: any): TransactionProfile => {
-  // Deep clone the profile to avoid mutating the original
-  const processedProfile = JSON.parse(JSON.stringify(profile));
-
-  // Process instruction profiles
-  if (processedProfile.instructionProfiles) {
-    processedProfile.instructionProfiles.forEach((instruction: any) => {
-      if (instruction.accountStates) {
-        Object.keys(instruction.accountStates).forEach((address) => {
-          const accountState = instruction.accountStates[address];
-          if (accountState.accountChange?.data) {
-            if (Array.isArray(accountState.accountChange.data)) {
-              // Handle update case where data is an array
-              accountState.accountChange.data = accountState.accountChange.data.map((item: any) => {
-                if (item.data) {
-                  item.data = decodeAccountData(item.data);
-                }
-                return item;
-              });
-            } else {
-              // Handle single data object
-              if (accountState.accountChange.data.data) {
-                accountState.accountChange.data.data = decodeAccountData(accountState.accountChange.data.data);
-              }
-            }
-          }
-        });
-      }
-    });
-  }
-
-  // Process readonly account states
-  if (processedProfile.readonlyAccountStates) {
-    Object.keys(processedProfile.readonlyAccountStates).forEach((address) => {
-      const accountState = processedProfile.readonlyAccountStates[address];
-      if (accountState.data) {
-        accountState.data = decodeAccountData(accountState.data);
-      }
-    });
-  }
-
-  return processedProfile;
-};
-
-// Enhanced diff algorithm using fast-myers-diff
-const computeHexDiff = (beforeBytes: number[], afterBytes: number[]) => {
-  const diffResult = analyzeHexDiff(beforeBytes, afterBytes);
-
-  // Create maps for easy lookup during rendering
-  const beforeDiffMap = new Map<number, { type: 'removal' | 'update'; range?: { start: number; end: number } }>();
-  const afterDiffMap = new Map<number, { type: 'addition' | 'update'; range?: { start: number; end: number } }>();
-
-  // Mark removals (red highlighting in before view)
-  diffResult.removals.forEach((removal) => {
-    for (let i = removal.beforeRange.start; i <= removal.beforeRange.end; i++) {
-      beforeDiffMap.set(i, { type: 'removal', range: removal.beforeRange });
-    }
-  });
-
-  // Mark additions (green highlighting in after view)
-  diffResult.additions.forEach((addition) => {
-    for (let i = addition.afterRange.start; i <= addition.afterRange.end; i++) {
-      afterDiffMap.set(i, { type: 'addition', range: addition.afterRange });
-    }
-  });
-
-  // Mark updates (yellow highlighting in both views)
-  diffResult.updates.forEach((update) => {
-    for (let i = update.beforeRange.start; i <= update.beforeRange.end; i++) {
-      beforeDiffMap.set(i, { type: 'update', range: update.beforeRange });
-    }
-    for (let i = update.afterRange.start; i <= update.afterRange.end; i++) {
-      afterDiffMap.set(i, { type: 'update', range: update.afterRange });
-    }
-  });
-
-  return { beforeDiffMap, afterDiffMap, diffResult };
-};
-
-// Client-side only component - will be hydrated on the client
-
-// Shared sub-components
-interface LamportsDisplayProps {
-  lamports: number;
-  label?: string;
-  className?: string;
-}
-
-const LamportsDisplay: React.FC<LamportsDisplayProps> = ({ lamports, label, className = '' }) => {
-  return (
-    <TokenAmountDisplay
-      amount={lamports}
-      decimals={9}
-      symbol="SOL"
-      className={className}
-      variant="badge"
-      formatOptions={{
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 9,
-      }}
-    />
-  );
-};
 
 interface OwnerDisplayProps {
   owner: string;
@@ -466,42 +168,7 @@ const DataDisplay: React.FC<DataDisplayProps> = ({
   );
 };
 
-interface LamportsComparisonProps {
-  beforeLamports: number;
-  afterLamports: number;
-}
 
-const LamportsComparison: React.FC<LamportsComparisonProps> = ({ beforeLamports, afterLamports }) => {
-  const hasChange = beforeLamports !== afterLamports;
-  const smallerAmount = Math.min(beforeLamports, afterLamports);
-  const largerAmount = Math.max(beforeLamports, afterLamports);
-
-  return (
-    <div className="flex items-center gap-1">
-      {hasChange && (
-        <>
-          <LamportsDisplay
-            lamports={beforeLamports}
-            className={
-              beforeLamports === smallerAmount ? 'border-red-500/30 text-red-300' : 'border-green-500/30 text-green-300'
-            }
-          />
-          <span className="text-xs text-gray-500">→</span>
-        </>
-      )}
-      <LamportsDisplay
-        lamports={afterLamports}
-        className={
-          hasChange
-            ? afterLamports === smallerAmount
-              ? 'border-red-500/30 text-red-300'
-              : 'border-green-500/30 text-green-300'
-            : ''
-        }
-      />
-    </div>
-  );
-};
 
 interface PermissionsBoxProps {
   accountState: any;
@@ -2756,70 +2423,9 @@ export default function TransactionInspector({
                   {transactionProfile.instructionProfiles && transactionProfile.instructionProfiles.length > 0 && (
                     <div className="mb-8">
                       <div className="mb-3 text-xs text-gray-500">Estimated CU Breakdown per Instruction</div>
-                      <div className="flex h-6 overflow-hidden rounded-md border border-zinc-600">
-                        {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
-                          const cu = profile.computeUnitsConsumed || 0;
-                          const totalCu =
-                            transactionProfile.instructionProfiles.reduce(
-                              (sum: number, profile: any) => sum + (profile.computeUnitsConsumed || 0),
-                              0
-                            ) || 1;
-                          const percentage = (cu / totalCu) * 100;
-
-                          // macOS-style colors for different instruction types
-                          const colors = [
-                            'bg-blue-500', // Blue
-                            'bg-green-500', // Green
-                            'bg-orange-500', // Orange
-                            'bg-purple-500', // Purple
-                            'bg-red-500', // Red
-                            'bg-yellow-500', // Yellow
-                            'bg-pink-500', // Pink
-                            'bg-indigo-500', // Indigo
-                          ];
-                          const colorClass = colors[index % colors.length];
-
-                          return (
-                            <div
-                              key={index}
-                              className={`${colorClass} group relative cursor-pointer transition-all duration-200 hover:brightness-110`}
-                              style={{ width: `${percentage}%` }}
-                              title={`Instruction ${index + 1}: ${cu} CU (${percentage.toFixed(1)}%)`}
-                            >
-                              {/* Tooltip on hover */}
-                              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 transform whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                                Instruction {index + 1}: {cu} CU
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Legend */}
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {transactionProfile.instructionProfiles.map((profile: any, index: number) => {
-                          const cu = profile.computeUnitsConsumed || 0;
-                          const colors = [
-                            'bg-blue-500',
-                            'bg-green-500',
-                            'bg-orange-500',
-                            'bg-purple-500',
-                            'bg-red-500',
-                            'bg-yellow-500',
-                            'bg-pink-500',
-                            'bg-indigo-500',
-                          ];
-                          const colorClass = colors[index % colors.length];
-
-                          return (
-                            <div key={index} className="flex items-center gap-2 text-xs">
-                              <div className={`h-3 w-3 rounded ${colorClass}`}></div>
-                              <span className="text-gray-300">Instruction #{index + 1}:</span>
-                              <span className="text-gray-400">{cu} CU</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <ComputeUnitBar
+                        values={transactionProfile.instructionProfiles.map((profile: any) => profile.computeUnitsConsumed || 0)}
+                      />
                     </div>
                   )}
 
@@ -2829,72 +2435,22 @@ export default function TransactionInspector({
                       // Get the actual instruction from selectedTransaction using the index
                       const instruction = selectedTransaction?.transaction?.message?.instructions?.[index];
                       const programId = instruction?.programId || profile.programId;
-                      const programName = getProgramName(programId);
-                      // macOS-style colors for different instruction types
-                      const colors = [
-                        'bg-blue-500', // Blue
-                        'bg-green-500', // Green
-                        'bg-orange-500', // Orange
-                        'bg-purple-500', // Purple
-                        'bg-red-500', // Red
-                        'bg-yellow-500', // Yellow
-                        'bg-pink-500', // Pink
-                        'bg-indigo-500', // Indigo
-                      ];
-
                       return (
-                        <div key={index} className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800/50">
-                          {/* Instruction Header */}
-                          <div
-                            className="cursor-pointer border-b border-zinc-700 bg-zinc-900/50 p-3 transition-colors hover:bg-zinc-900/70"
-                            onClick={() => toggleInstructionExpansion(index)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`mr-2 ${
-                                      colors[index % colors.length] === 'bg-blue-500'
-                                        ? 'text-blue-500'
-                                        : colors[index % colors.length] === 'bg-green-500'
-                                          ? 'text-green-500'
-                                          : colors[index % colors.length] === 'bg-orange-500'
-                                            ? 'text-orange-500'
-                                            : colors[index % colors.length] === 'bg-purple-500'
-                                              ? 'text-purple-500'
-                                              : colors[index % colors.length] === 'bg-red-500'
-                                                ? 'text-red-500'
-                                                : colors[index % colors.length] === 'bg-yellow-500'
-                                                  ? 'text-yellow-500'
-                                                  : colors[index % colors.length] === 'bg-pink-500'
-                                                    ? 'text-pink-500'
-                                                    : colors[index % colors.length] === 'bg-indigo-500'
-                                                      ? 'text-indigo-500'
-                                                      : 'text-gray-500'
-                                    }`}
-                                  >
-                                    {expandedInstructions.has(index) ? '▼' : '▶'}
-                                  </span>
-                                  <div className="text-sm font-semibold text-zinc-200">
-                                    Instruction #{index + 1}: {programName}
-                                  </div>
-                                </div>
-
-                                {profile.errorMessage && (
-                                  <Badge color="red" className="text-xs">
-                                    ERROR
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="font-mono text-xs font-semibold text-white">
-                                {profile.computeUnitsConsumed || 0} CU
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Instruction Content */}
-                          {expandedInstructions.has(index) && (
-                            <div className="space-y-4 p-4">
+                        <InstructionProfileCard
+                          key={index}
+                          index={index}
+                          instruction={profile}
+                          programId={programId}
+                          open={expandedInstructions.has(index)}
+                          onToggle={() => toggleInstructionExpansion(index)}
+                          headerExtras={
+                            profile.errorMessage ? (
+                              <Badge color="red" className="text-xs">
+                                ERROR
+                              </Badge>
+                            ) : undefined
+                          }
+                        >
                               {/* Account States */}
                               {profile.accountStates && (
                                 <div>
@@ -3082,21 +2638,7 @@ export default function TransactionInspector({
 
                               {/* Log Messages */}
                               {profile.logMessages && profile.logMessages.length > 0 && (
-                                <div>
-                                  <div className="mb-2 text-xs font-semibold text-gray-500">LOGS</div>
-                                  <div className="max-h-32 overflow-y-auto rounded border border-gray-600 bg-black/80 p-3 font-mono text-xs">
-                                    <div className="space-y-1">
-                                      {profile.logMessages.map((log: string, logIndex: number) => (
-                                        <div key={logIndex} className="text-emerald-400">
-                                          <span className="text-gray-500">
-                                            [{logIndex.toString().padStart(3, '0')}]
-                                          </span>{' '}
-                                          {log}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
+                                <LogsBlock logs={profile.logMessages} title="LOGS" />
                               )}
 
                               {/* Error Message */}
@@ -3108,9 +2650,7 @@ export default function TransactionInspector({
                                   </div>
                                 </div>
                               )}
-                            </div>
-                          )}
-                        </div>
+                        </InstructionProfileCard>
                       );
                     })}
                   </div>
