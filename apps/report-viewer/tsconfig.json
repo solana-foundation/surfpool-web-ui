@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@surfpool/svm": ["../../packages/svm/src"],
+      "@surfpool/ui": ["../../packages/ui/src"],
+      "@surfpool/shared": ["../../packages/shared/src"]
+    },
+    "target": "ES2017"
+  },
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["dist", "node_modules"]
+}

@@ -37,12 +37,22 @@ jobs:
           NEXT_PUBLIC_NHOST_STORAGE_URL: ${{ secrets.NEXT_PUBLIC_NHOST_STORAGE_URL }}
           NEXT_PUBLIC_NHOST_FUNCTIONS_URL: ${{ secrets.NEXT_PUBLIC_NHOST_FUNCTIONS_URL }}
 
+      - name: Build report viewer app
+        run: pnpm --filter ./apps/report-viewer run build
+
       - name: Zip dist folder
         run: |
           cd apps/studio/out
           zip -r ../../../studio-dist.zip .
 
+      - name: Zip report viewer dist
+        run: |
+          cd apps/report-viewer/dist
+          zip -r ../../../surfpool-report-viewer.zip .
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: studio-dist.zip
+          files: |
+            studio-dist.zip
+            surfpool-report-viewer.zip

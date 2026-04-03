@@ -65,3 +65,4 @@ apps/docs/public/llms.txt
 apps/www/.next
 apps/**/node_modules
 apps/**/out
+dist
