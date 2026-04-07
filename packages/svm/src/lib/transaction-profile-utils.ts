@@ -435,6 +435,14 @@ const byteArrayToString = (data: unknown): string => {
   return String(data ?? '');
 };
 
+export const formatHexDump = (data: string): string => {
+  return formatHex(data, true);
+};
+
+export const formatHexOnly = (data: string): string => {
+  return formatHex(data, false);
+};
+
 const formatHex = (data: string, includeAscii: boolean): string => {
   const bytes = Array.from(data).map((char) => char.charCodeAt(0));
   const lines: string[] = [];
@@ -487,6 +495,13 @@ export const hasJsonData = (data: unknown): boolean => {
     }
 
     if (value.parsed && typeof value.parsed === 'object') {
+      const parsed = value.parsed as Record<string, unknown>;
+      if (parsed.info && typeof parsed.info === 'object') {
+        const info = parsed.info as Record<string, unknown>;
+        if (info.programData) {
+          return true;
+        }
+      }
       return true;
     }
 
@@ -514,6 +529,13 @@ export const extractProgramData = (data: unknown): unknown => {
     }
 
     if (value.parsed && typeof value.parsed === 'object') {
+      const parsed = value.parsed as Record<string, unknown>;
+      if (parsed.info && typeof parsed.info === 'object') {
+        const info = parsed.info as Record<string, unknown>;
+        if (info.programData) {
+          return info.programData;
+        }
+      }
       return value.parsed;
     }
 

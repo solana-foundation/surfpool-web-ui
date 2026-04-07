@@ -61,9 +61,11 @@ describe('SurfpoolReportViewer', () => {
   it('renders summary cards and transaction rows', () => {
     render(<SurfpoolReportViewer report={reportFixture} />);
 
-    expect(screen.getByText('Static transaction forensics for Surfnet test runs')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'surfpool report' })).toBeInTheDocument();
     expect(screen.getByText('sdk::report_viewer')).toBeInTheDocument();
-    expect(screen.getByText('1 test instances')).toBeInTheDocument();
+    expect(screen.getByText('1 tests')).toBeInTheDocument();
+    expect(screen.getByText('1 transactions')).toBeInTheDocument();
+    expect(screen.getByText(reportFixture.generated_at)).toBeInTheDocument();
     expect(screen.getByText('transfer complete')).toBeInTheDocument();
   });
 
@@ -76,7 +78,7 @@ describe('SurfpoolReportViewer', () => {
     expect(screen.getByText('TRANSACTION DETAIL')).toBeInTheDocument();
     expect(screen.getAllByText('Program log: transfer complete').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'CLOSE' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(screen.queryByText('TRANSACTION DETAIL')).not.toBeInTheDocument();
     openSpy.mockRestore();

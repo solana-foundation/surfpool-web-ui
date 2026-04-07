@@ -12,7 +12,7 @@ import {
   hasJsonData,
   mergeTransactionProfiles,
   processTransactionProfile,
-} from '@/lib/transaction-inspector-utils';
+} from '@surfpool/svm';
 import { ArrowTopRightOnSquareIcon, ClipboardIcon } from '@heroicons/react/24/outline';
 import { getTransactionExplorerUrl, logger } from '@surfpool/shared';
 import { Badge, brandBlue, Dialog, DialogBody } from '@surfpool/ui';

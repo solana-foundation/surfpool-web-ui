@@ -119,34 +119,123 @@ export const LamportsComparison: React.FC<{ beforeLamports: number; afterLamport
   );
 };
 
-export const AccountLabels: React.FC<{ address: string; accountState: AccountState | { type?: string } }> = ({
-  address,
-  accountState,
-}) => {
-  const labels: string[] = [];
-  const programType = getProgramType(address);
-  const changeType = (accountState as AccountState).accountChange?.type ?? accountState.type;
+const checkIsExecutable = (
+  address: string,
+  accountState: AccountState | { type?: string },
+  hasChanges: boolean,
+  transactionProfile?: TransactionProfile | null,
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null,
+): boolean => {
+  let isExec = false;
 
-  if (programType) {
-    labels.push(programType);
+  if (hasChanges && (accountState as AccountState).accountChange?.data) {
+    const changeData = (accountState as AccountState).accountChange!.data;
+    if (Array.isArray(changeData)) {
+      isExec = (changeData[0] as AccountData)?.executable || (changeData[1] as AccountData)?.executable;
+    } else if (changeData) {
+      isExec = (changeData as AccountData).executable;
+    }
+  } else if (
+    !hasChanges &&
+    transactionProfile?.readonlyAccountStates?.[address]
+  ) {
+    isExec = transactionProfile.readonlyAccountStates[address].executable;
   }
 
-  switch (changeType) {
-    case 'create':
-      labels.push('NEW ACCOUNT');
-      break;
-    case 'update':
-      labels.push('UPDATED ACCOUNT');
-      break;
-    case 'delete':
-      labels.push('DELETED ACCOUNT');
-      break;
-    case 'readonly':
-    case 'read':
-      labels.push('READ ACCOUNT');
-      break;
-    default:
-      break;
+  if (!isExec && transactionProfile?.instructionProfiles) {
+    for (const instrProfile of transactionProfile.instructionProfiles) {
+      if (instrProfile.accountStates?.[address]) {
+        const state = instrProfile.accountStates[address];
+        if (state.accountChange?.data) {
+          if (Array.isArray(state.accountChange.data)) {
+            isExec = (state.accountChange.data[0] as AccountData)?.executable || (state.accountChange.data[1] as AccountData)?.executable;
+          } else {
+            isExec = (state.accountChange.data as AccountData).executable;
+          }
+        }
+        if (isExec) break;
+      }
+    }
+  }
+
+  if (!isExec && selectedTransaction?.transaction?.message?.instructions) {
+    for (const instruction of selectedTransaction.transaction.message.instructions) {
+      if (instruction.programId === address) {
+        isExec = true;
+        break;
+      }
+    }
+  }
+
+  return isExec;
+};
+
+export const PermissionsBox: React.FC<{
+  accountState: AccountState | { type?: string };
+  address: string;
+  hasChanges: boolean;
+  transactionProfile?: TransactionProfile | null;
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null;
+}> = ({ accountState, address, hasChanges, transactionProfile, selectedTransaction }) => {
+  const isExecutable = checkIsExecutable(address, accountState, hasChanges, transactionProfile, selectedTransaction);
+
+  return (
+    <div className="mr-3 flex items-center rounded-md bg-clip-border">
+      <div className="h-6 rounded-[2px] border border-zinc-600/50 bg-zinc-800/50 font-mono text-xs">
+        <span
+          className={`inline-block h-full w-6 border-r border-zinc-600/50 text-center ${accountState.type === 'readonly' ? 'bg-zinc-300 text-zinc-900' : 'text-zinc-500'}`}
+        >
+          R
+        </span>
+        <span
+          className={`inline-block h-full w-6 border-r border-zinc-600/50 text-center ${accountState.type === 'writable' ? 'bg-zinc-300 text-zinc-900' : 'text-zinc-500'}`}
+        >
+          W
+        </span>
+        <span
+          className={`inline-block h-full w-6 text-center ${isExecutable ? 'bg-zinc-300 text-zinc-900' : 'text-zinc-500'}`}
+        >
+          X
+        </span>
+      </div>
+    </div>
+  );
+};
+
+export const AccountLabels: React.FC<{
+  address: string;
+  accountState: AccountState | { type?: string };
+  transactionProfile?: TransactionProfile | null;
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null;
+}> = ({
+  address,
+  accountState,
+  transactionProfile,
+  selectedTransaction,
+}) => {
+  const changeType = (accountState as AccountState).accountChange?.type ?? accountState.type;
+  const hasChanges = changeType === 'create' || changeType === 'update' || changeType === 'delete';
+  const isExecutable = checkIsExecutable(address, accountState, hasChanges, transactionProfile, selectedTransaction);
+  const programType = getProgramType(address);
+
+  const labels: Array<{ text: string; className: string }> = [];
+
+  if (changeType === 'create') {
+    labels.push({ text: 'NEW ACCOUNT', className: 'border-green-500/30 bg-green-900/30 text-green-300' });
+  } else if (changeType === 'update') {
+    labels.push({ text: 'UPDATED ACCOUNT', className: 'border-yellow-500/30 bg-yellow-900/30 text-yellow-300' });
+  } else if (changeType === 'delete') {
+    labels.push({ text: 'DELETED ACCOUNT', className: 'border-red-500/30 bg-red-900/30 text-red-300' });
+  }
+
+  if (isExecutable && programType) {
+    labels.push({ text: programType, className: 'border-gray-400/30 bg-gray-800/30 text-gray-200' });
+  } else if (programType) {
+    labels.push({ text: programType, className: 'border-gray-400/30 bg-gray-800/30 text-gray-200' });
+  }
+
+  if (!hasChanges && !isExecutable && !programType) {
+    labels.push({ text: 'READ ACCOUNT', className: 'border-gray-500/30 bg-gray-900/30 text-gray-300' });
   }
 
   if (labels.length === 0) {
@@ -154,13 +243,13 @@ export const AccountLabels: React.FC<{ address: string; accountState: AccountSta
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex items-center">
       {labels.map((label) => (
         <span
-          key={label}
-          className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold tracking-[0.2em] text-cyan-200"
+          key={label.text}
+          className={`mr-2 rounded border px-2 py-0.5 text-[10px] font-medium ${label.className}`}
         >
-          {label}
+          {label.text}
         </span>
       ))}
     </div>
@@ -249,7 +338,11 @@ const byteArrayFromData = (data: unknown): number[] => {
   return Array.from(String(data ?? '')).map((char) => char.charCodeAt(0));
 };
 
-const DiffHexBlock: React.FC<{ beforeData: unknown; afterData: unknown }> = ({ beforeData, afterData }) => {
+const DiffHexBlock: React.FC<{
+  beforeData: unknown;
+  afterData: unknown;
+  copyHexButton?: (data: unknown, label: string) => React.ReactNode;
+}> = ({ beforeData, afterData, copyHexButton }) => {
   const beforeBytes = byteArrayFromData(beforeData);
   const afterBytes = byteArrayFromData(afterData);
   const { beforeDiffMap, afterDiffMap } = computeHexDiff(beforeBytes, afterBytes);
@@ -286,18 +379,28 @@ const DiffHexBlock: React.FC<{ beforeData: unknown; afterData: unknown }> = ({ b
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <div>
-        <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">BEFORE</div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">BEFORE</div>
+          {copyHexButton?.(beforeData, 'before')}
+        </div>
         <HexBlock html={render(beforeBytes, beforeDiffMap as any, 'bg-rose-500/15 text-rose-100')} />
       </div>
       <div>
-        <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">AFTER</div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">AFTER</div>
+          {copyHexButton?.(afterData, 'after')}
+        </div>
         <HexBlock html={render(afterBytes, afterDiffMap as any, 'bg-emerald-500/15 text-emerald-100')} />
       </div>
     </div>
   );
 };
 
-const AccountDataBlock: React.FC<{ data: unknown }> = ({ data }) => {
+const AccountDataBlock: React.FC<{
+  data: unknown;
+  idlDropZone?: React.ReactNode;
+  renderJson?: (data: unknown) => React.ReactNode;
+}> = ({ data, idlDropZone, renderJson }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(hasJsonData(data) ? 'parsed' : 'hex');
   const parsed = extractProgramData(data);
 
@@ -324,15 +427,22 @@ const AccountDataBlock: React.FC<{ data: unknown }> = ({ data }) => {
         </div>
       </div>
       {viewMode === 'parsed' && hasJsonData(data) ? (
-        <PrettyJsonBlock value={parsed} />
+        renderJson ? renderJson(parsed) : <PrettyJsonBlock value={parsed} />
       ) : (
         <HexBlock html={getHexData(data)} />
       )}
+      {!hasJsonData(data) && idlDropZone}
     </div>
   );
 };
 
-const AccountDataDiffBlock: React.FC<{ beforeData: unknown; afterData: unknown }> = ({ beforeData, afterData }) => {
+const AccountDataDiffBlock: React.FC<{
+  beforeData: unknown;
+  afterData: unknown;
+  idlDropZone?: React.ReactNode;
+  renderJsonDiff?: (beforeData: unknown, afterData: unknown) => React.ReactNode;
+  copyHexButton?: (data: unknown, label: string) => React.ReactNode;
+}> = ({ beforeData, afterData, idlDropZone, renderJsonDiff, copyHexButton }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(
     hasJsonData(beforeData) || hasJsonData(afterData) ? 'parsed' : 'hex'
   );
@@ -363,19 +473,22 @@ const AccountDataDiffBlock: React.FC<{ beforeData: unknown; afterData: unknown }
         </div>
       </div>
       {viewMode === 'parsed' && (hasJsonData(beforeData) || hasJsonData(afterData)) ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div>
-            <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">BEFORE</div>
-            <PrettyJsonBlock value={beforeParsed} highlightPaths={changedPaths} />
+        renderJsonDiff ? renderJsonDiff(beforeParsed, afterParsed) : (
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div>
+              <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">BEFORE</div>
+              <PrettyJsonBlock value={beforeParsed} highlightPaths={changedPaths} />
+            </div>
+            <div>
+              <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">AFTER</div>
+              <PrettyJsonBlock value={afterParsed} highlightPaths={changedPaths} />
+            </div>
           </div>
-          <div>
-            <div className="mb-2 text-[10px] font-semibold tracking-[0.2em] text-zinc-500">AFTER</div>
-            <PrettyJsonBlock value={afterParsed} highlightPaths={changedPaths} />
-          </div>
-        </div>
+        )
       ) : (
-        <DiffHexBlock beforeData={beforeData} afterData={afterData} />
+        <DiffHexBlock beforeData={beforeData} afterData={afterData} copyHexButton={copyHexButton} />
       )}
+      {!hasJsonData(beforeData) && !hasJsonData(afterData) && idlDropZone}
     </div>
   );
 };
@@ -385,77 +498,127 @@ const AccountDetailsCard: React.FC<{
   accountData: AccountData;
   accountType: 'create' | 'delete' | 'read';
   rpcUrl?: string;
-}> = ({ address, accountData, accountType, rpcUrl }) => {
+  idlDropZone?: React.ReactNode;
+  renderJson?: (data: unknown) => React.ReactNode;
+}> = ({ address, accountData, accountType, rpcUrl, idlDropZone, renderJson }) => {
+  const getLamportsLabel = () => {
+    if (accountType === 'delete') return 'LAMPORTS REMOVED';
+    if (accountType === 'read') return 'LAMPORTS';
+    return 'LAMPORTS ADDED';
+  };
+
   return (
-    <div className="overflow-hidden rounded-[1.4rem] border border-zinc-800 bg-zinc-950/70">
-      <FieldRow
-        label={accountType === 'delete' ? 'LAMPORTS REMOVED' : accountType === 'read' ? 'LAMPORTS' : 'LAMPORTS ADDED'}
-        value={<LamportsDisplay lamports={accountData.lamports} />}
-      />
-      <FieldRow label="OWNER" value={<AddressChip address={accountData.owner} rpcUrl={rpcUrl} aggressiveTruncate />} />
-      <div className="space-y-3 px-4 py-4">
-        <AccountLabels
-          address={address}
-          accountState={
-            accountType === 'read'
-              ? { type: 'readonly' }
-              : {
-                  type: 'writable',
-                  accountChange: { type: accountType },
-                }
-          }
-        />
-        {!accountData.executable && <AccountDataBlock data={accountData} />}
+    <div className="space-y-4 text-xs text-gray-400">
+      <div className="flex items-center justify-between">
+        <span className="px-5 text-xs font-semibold text-gray-500">{getLamportsLabel()}</span>
+        <span className="pr-5 text-right">
+          <LamportsDisplay lamports={accountData.lamports} />
+        </span>
       </div>
+      {accountData.owner && (
+        <div className="flex items-center justify-between">
+          <span className="px-5 text-xs font-semibold text-gray-500">
+            <span className="hidden sm:inline">ACCOUNT OWNER</span>
+            <span className="sm:hidden">OWNER</span>
+          </span>
+          <span className="pr-5">
+            <AddressChip address={accountData.owner} rpcUrl={rpcUrl} aggressiveTruncate />
+          </span>
+        </div>
+      )}
+      {accountData.executable ? (
+        <div className="space-y-0 pb-2" />
+      ) : (
+        <div className="space-y-0">
+          <AccountDataBlock data={accountData} idlDropZone={idlDropZone} renderJson={renderJson} />
+        </div>
+      )}
     </div>
   );
 };
 
-const UpdateAccountDetailsCard: React.FC<{ address: string; accountData: AccountData[]; rpcUrl?: string }> = ({
+const UpdateAccountDetailsCard: React.FC<{
+  address: string;
+  accountData: AccountData[];
+  rpcUrl?: string;
+  idlDropZone?: React.ReactNode;
+  renderJsonDiff?: (beforeData: unknown, afterData: unknown) => React.ReactNode;
+  copyHexButton?: (data: unknown, label: string) => React.ReactNode;
+}> = ({
   address,
   accountData,
   rpcUrl,
+  idlDropZone,
+  renderJsonDiff,
+  copyHexButton,
 }) => {
   const [beforeData, afterData] = accountData;
   return (
-    <div className="overflow-hidden rounded-[1.4rem] border border-zinc-800 bg-zinc-950/70">
-      <FieldRow
-        label="LAMPORTS"
-        value={<LamportsComparison beforeLamports={beforeData.lamports} afterLamports={afterData.lamports} />}
-        highlight={beforeData.lamports !== afterData.lamports}
-      />
-      <FieldRow
-        label="OWNER"
-        value={
-          <div className="flex items-center gap-2">
-            <AddressChip address={beforeData.owner} rpcUrl={rpcUrl} aggressiveTruncate />
-            {beforeData.owner !== afterData.owner && <span className="text-zinc-500">→</span>}
-            {beforeData.owner !== afterData.owner && <AddressChip address={afterData.owner} rpcUrl={rpcUrl} aggressiveTruncate />}
-            {beforeData.owner === afterData.owner && <span className="text-zinc-500">unchanged</span>}
-          </div>
-        }
-        highlight={beforeData.owner !== afterData.owner}
-      />
-      <div className="space-y-3 px-4 py-4">
-        <AccountLabels
-          address={address}
-          accountState={{
-            type: 'writable',
-            accountChange: { type: 'update' },
-          }}
-        />
-        {!beforeData.executable && !afterData.executable && (
-          <AccountDataDiffBlock beforeData={beforeData} afterData={afterData} />
-        )}
+    <div className="space-y-3">
+      <div className="flex items-center justify-between px-5">
+        <span className={`text-xs font-semibold ${beforeData.lamports !== afterData.lamports ? 'text-yellow-400' : 'text-gray-400'}`}>
+          LAMPORTS
+        </span>
+        <LamportsComparison beforeLamports={beforeData.lamports} afterLamports={afterData.lamports} />
       </div>
+      {beforeData.owner && (
+        <div className="flex items-center justify-between px-5">
+          <span className={`text-xs font-semibold ${beforeData.owner !== afterData.owner ? 'text-yellow-400' : 'text-gray-400'}`}>
+            <span className="hidden sm:inline">ACCOUNT OWNER</span>
+            <span className="sm:hidden">OWNER</span>
+          </span>
+          <div className="flex items-center gap-2">
+            {beforeData.owner !== afterData.owner && (
+              <>
+                <AddressChip address={beforeData.owner} rpcUrl={rpcUrl} aggressiveTruncate />
+                <span className="text-xs text-gray-500">→</span>
+              </>
+            )}
+            <AddressChip address={afterData.owner} rpcUrl={rpcUrl} aggressiveTruncate />
+          </div>
+        </div>
+      )}
+      {beforeData.executable || afterData.executable ? (
+        <div className="space-y-0" />
+      ) : (
+        <div className="space-y-0">
+          <AccountDataDiffBlock
+            beforeData={beforeData}
+            afterData={afterData}
+            idlDropZone={idlDropZone}
+            renderJsonDiff={renderJsonDiff}
+            copyHexButton={copyHexButton}
+          />
+        </div>
+      )}
     </div>
   );
 };
 
-const AccountChangeCard: React.FC<{ address: string; state: AccountState; rpcUrl?: string }> = ({
+export interface AccountChangeCardProps {
+  address: string;
+  state: AccountState;
+  rpcUrl?: string;
+  permissionsBox?: React.ReactNode;
+  transactionProfile?: TransactionProfile | null;
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null;
+  idlDropZone?: React.ReactNode;
+  renderJson?: (data: unknown) => React.ReactNode;
+  renderJsonDiff?: (beforeData: unknown, afterData: unknown) => React.ReactNode;
+  copyHexButton?: (data: unknown, label: string) => React.ReactNode;
+}
+
+const AccountChangeCard: React.FC<AccountChangeCardProps> = ({
   address,
   state,
   rpcUrl,
+  permissionsBox,
+  transactionProfile,
+  selectedTransaction,
+  idlDropZone,
+  renderJson,
+  renderJsonDiff,
+  copyHexButton,
 }) => {
   const accountChange = state.accountChange;
   const summaryId = useId();
@@ -471,30 +634,59 @@ const AccountChangeCard: React.FC<{ address: string; state: AccountState; rpcUrl
         className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden"
       >
         <div className="space-y-2">
-          <AccountLabels address={address} accountState={state} />
+          <div className="flex items-center gap-2">
+            {permissionsBox}
+            <AccountLabels
+              address={address}
+              accountState={state}
+              transactionProfile={transactionProfile}
+              selectedTransaction={selectedTransaction}
+            />
+          </div>
           <AddressChip address={address} rpcUrl={rpcUrl} />
         </div>
         <span className="text-[11px] font-semibold tracking-[0.22em] text-zinc-500">{accountChange.type}</span>
       </summary>
       <div className="border-t border-zinc-800/70 p-4">
         {accountChange.type === 'update' && Array.isArray(accountChange.data) ? (
-          <UpdateAccountDetailsCard address={address} accountData={accountChange.data} rpcUrl={rpcUrl} />
+          <UpdateAccountDetailsCard
+            address={address}
+            accountData={accountChange.data}
+            rpcUrl={rpcUrl}
+            idlDropZone={idlDropZone}
+            renderJsonDiff={renderJsonDiff}
+            copyHexButton={copyHexButton}
+          />
         ) : null}
         {accountChange.type === 'create' && !Array.isArray(accountChange.data) && accountChange.data ? (
-          <AccountDetailsCard address={address} accountData={accountChange.data} accountType="create" rpcUrl={rpcUrl} />
+          <AccountDetailsCard address={address} accountData={accountChange.data} accountType="create" rpcUrl={rpcUrl} idlDropZone={idlDropZone} renderJson={renderJson} />
         ) : null}
         {accountChange.type === 'delete' && !Array.isArray(accountChange.data) && accountChange.data ? (
-          <AccountDetailsCard address={address} accountData={accountChange.data} accountType="delete" rpcUrl={rpcUrl} />
+          <AccountDetailsCard address={address} accountData={accountChange.data} accountType="delete" rpcUrl={rpcUrl} idlDropZone={idlDropZone} renderJson={renderJson} />
         ) : null}
       </div>
     </details>
   );
 };
 
-const ReadonlyAccountCard: React.FC<{ address: string; accountState: ReadonlyAccountState; rpcUrl?: string }> = ({
+const ReadonlyAccountCard: React.FC<{
+  address: string;
+  accountState: ReadonlyAccountState;
+  rpcUrl?: string;
+  permissionsBox?: React.ReactNode;
+  transactionProfile?: TransactionProfile | null;
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null;
+  idlDropZone?: React.ReactNode;
+  renderJson?: (data: unknown) => React.ReactNode;
+}> = ({
   address,
   accountState,
   rpcUrl,
+  permissionsBox,
+  transactionProfile,
+  selectedTransaction,
+  idlDropZone,
+  renderJson,
 }) => {
   const normalizedAccountData: AccountData = {
     lamports: accountState.lamports,
@@ -520,13 +712,21 @@ const ReadonlyAccountCard: React.FC<{ address: string; accountState: ReadonlyAcc
     <details className="overflow-hidden rounded-[1.3rem] border border-zinc-800/80 bg-black/30">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden">
         <div className="space-y-2">
-          <AccountLabels address={address} accountState={{ type: 'readonly' }} />
+          <div className="flex items-center gap-2">
+            {permissionsBox}
+            <AccountLabels
+              address={address}
+              accountState={{ type: 'readonly' }}
+              transactionProfile={transactionProfile}
+              selectedTransaction={selectedTransaction}
+            />
+          </div>
           <AddressChip address={address} rpcUrl={rpcUrl} />
         </div>
         <LamportsDisplay lamports={accountState.lamports} />
       </summary>
       <div className="border-t border-zinc-800/70 p-4">
-        <AccountDetailsCard address={address} accountData={normalizedAccountData} accountType="read" rpcUrl={rpcUrl} />
+        <AccountDetailsCard address={address} accountData={normalizedAccountData} accountType="read" rpcUrl={rpcUrl} idlDropZone={idlDropZone} renderJson={renderJson} />
       </div>
     </details>
   );
@@ -655,27 +855,169 @@ export const InstructionProfileCard: React.FC<{
   );
 };
 
-const InstructionCard: React.FC<{ index: number; instruction: TransactionProfile['instructionProfiles'][number]; rpcUrl?: string }> = ({
+export interface AccountExtensionProps {
+  transactionProfile?: TransactionProfile | null;
+  selectedTransaction?: { transaction?: { message?: { instructions?: Array<{ programId?: string }> } } } | null;
+  idlDropZone?: React.ReactNode;
+  renderJson?: (data: unknown) => React.ReactNode;
+  renderJsonDiff?: (beforeData: unknown, afterData: unknown) => React.ReactNode;
+  copyHexButton?: (data: unknown, label: string) => React.ReactNode;
+  renderPermissionsBox?: (address: string, accountState: AccountState | { type?: string }) => React.ReactNode;
+}
+
+const getHoverClasses = (accountState: AccountState) => {
+  const hasChanges = accountState.accountChange && accountState.accountChange.type !== 'unchanged';
+  if (hasChanges && accountState.accountChange!.type === 'create') return 'hover:bg-green-900/40';
+  if (hasChanges && accountState.accountChange!.type === 'update') return 'hover:bg-yellow-900/40';
+  if (hasChanges && accountState.accountChange!.type === 'delete') return 'hover:bg-red-900/40';
+  if (accountState.type === 'readonly') return 'hover:bg-gray-700/40';
+  return 'hover:bg-zinc-800/40';
+};
+
+const InstructionCard: React.FC<{
+  index: number;
+  instruction: TransactionProfile['instructionProfiles'][number];
+  profile: TransactionProfile;
+  rpcUrl?: string;
+  extensions?: AccountExtensionProps;
+}> = ({
   index,
   instruction,
+  profile,
   rpcUrl,
+  extensions,
 }) => {
-  const changedAccounts = Object.entries(instruction.accountStates ?? {}).filter(([, state]) => {
-    return state.accountChange && state.accountChange.type !== 'unchanged';
+  const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({});
+
+  const toggleAccount = (address: string) => {
+    setExpandedAccounts((prev) => ({ ...prev, [address]: !prev[address] }));
+  };
+
+  // Get the program ID for this instruction (to sort it first)
+  const invokedProgram = instruction.logMessages
+    .find((line) => /^Program \w+ invoke \[1\]/.test(line))
+    ?.match(/^Program (\w+)/)?.[1];
+
+  // Build sorted account entries: all accounts from accountStates
+  const allAccounts = Object.entries(instruction.accountStates ?? {}).sort(([addressA], [addressB]) => {
+    if (addressA === invokedProgram) return -1;
+    if (addressB === invokedProgram) return 1;
+    return 0;
   });
 
   return (
     <InstructionProfileCard index={index} instruction={instruction} defaultOpen={index < 2}>
-        <LogsBlock logs={instruction.logMessages} />
-        {changedAccounts.length > 0 ? (
-          <div className="space-y-3">
-            {changedAccounts.map(([address, state]) => (
-              <AccountChangeCard key={address} address={address} state={state} rpcUrl={rpcUrl} />
-            ))}
+        {/* Account State Transitions */}
+        {allAccounts.length > 0 && (
+          <div>
+            <div className="mb-2 text-xs font-semibold text-gray-500">ACCOUNTS STATE TRANSITIONS</div>
+            <div className="overflow-hidden rounded border border-zinc-600 bg-zinc-900/30">
+              {allAccounts.map(([address, accountState], accountIndex) => {
+                const hasChanges = accountState.accountChange && accountState.accountChange.type !== 'unchanged';
+                const isLast = accountIndex === allAccounts.length - 1;
+                const isExpanded = expandedAccounts[address] ?? false;
+                const readonlyData = profile.readonlyAccountStates?.[address];
+
+                return (
+                  <div key={address}>
+                    <div className={`bg-zinc-900/30 p-3 ${getHoverClasses(accountState)} transition-colors`}>
+                      <div
+                        className="flex cursor-pointer items-center justify-between px-2 py-1 font-mono text-xs text-gray-400"
+                        onClick={() => toggleAccount(address)}
+                      >
+                        <div className="flex items-center">
+                          <AddressChip address={address} rpcUrl={rpcUrl} className="font-semibold text-gray-300" />
+                        </div>
+                        <AccountLabels
+                          address={address}
+                          accountState={accountState}
+                          transactionProfile={extensions?.transactionProfile ?? profile}
+                          selectedTransaction={extensions?.selectedTransaction}
+                        />
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="bg-zinc-950 pt-5">
+                        {hasChanges && accountState.accountChange!.type === 'create' && !Array.isArray(accountState.accountChange!.data) && accountState.accountChange!.data && (
+                          <AccountDetailsCard
+                            address={address}
+                            accountData={accountState.accountChange!.data as AccountData}
+                            accountType="create"
+                            rpcUrl={rpcUrl}
+                            idlDropZone={extensions?.idlDropZone}
+                            renderJson={extensions?.renderJson}
+                          />
+                        )}
+
+                        {hasChanges && accountState.accountChange!.type === 'update' && Array.isArray(accountState.accountChange!.data) && (
+                          <UpdateAccountDetailsCard
+                            address={address}
+                            accountData={accountState.accountChange!.data as AccountData[]}
+                            rpcUrl={rpcUrl}
+                            idlDropZone={extensions?.idlDropZone}
+                            renderJsonDiff={extensions?.renderJsonDiff}
+                            copyHexButton={extensions?.copyHexButton}
+                          />
+                        )}
+
+                        {hasChanges && accountState.accountChange!.type === 'delete' && !Array.isArray(accountState.accountChange!.data) && accountState.accountChange!.data && (
+                          <AccountDetailsCard
+                            address={address}
+                            accountData={accountState.accountChange!.data as AccountData}
+                            accountType="delete"
+                            rpcUrl={rpcUrl}
+                            idlDropZone={extensions?.idlDropZone}
+                            renderJson={extensions?.renderJson}
+                          />
+                        )}
+
+                        {!hasChanges && readonlyData && (
+                          <AccountDetailsCard
+                            address={address}
+                            accountData={{
+                              lamports: readonlyData.lamports,
+                              owner: readonlyData.owner,
+                              executable: readonlyData.executable,
+                              rentEpoch: readonlyData.rentEpoch,
+                              space: readonlyData.space,
+                              data: readonlyData.data,
+                              json: isStructuredAccountJson(readonlyData.json) ? readonlyData.json : undefined,
+                              bytes: readonlyData.bytes ?? (Array.isArray(readonlyData.data) && readonlyData.data.every((item) => typeof item === 'number') ? readonlyData.data : undefined),
+                            }}
+                            accountType="read"
+                            rpcUrl={rpcUrl}
+                            idlDropZone={extensions?.idlDropZone}
+                            renderJson={extensions?.renderJson}
+                          />
+                        )}
+
+                        {!hasChanges && !readonlyData && (
+                          <div className="rounded border border-gray-500/30 bg-gray-700/20 p-2 text-xs text-gray-400">
+                            No changes to this account
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!isLast && <div className="mx-3 h-px bg-zinc-500/20" />}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        ) : (
-          <div className="rounded-[1.4rem] border border-dashed border-zinc-800 bg-zinc-950/50 p-4 text-sm text-zinc-500">
-            No account changes recorded for this instruction.
+        )}
+
+        {/* Log Messages */}
+        <LogsBlock logs={instruction.logMessages} title="LOGS" />
+
+        {/* Error Message */}
+        {instruction.errorMessage && (
+          <div>
+            <div className="mb-2 text-xs font-semibold text-red-400">ERROR</div>
+            <div className="rounded border border-red-500/30 bg-red-900/20 p-3 text-xs text-red-300">
+              {instruction.errorMessage}
+            </div>
           </div>
         )}
     </InstructionProfileCard>
@@ -686,7 +1028,8 @@ export const TransactionDetailPanel: React.FC<{
   entry: TransactionReportEntry;
   profile: TransactionProfile | null;
   rpcUrl?: string;
-}> = ({ entry, profile, rpcUrl }) => {
+  extensions?: AccountExtensionProps;
+}> = ({ entry, profile, rpcUrl, extensions }) => {
   const instructionValues = profile?.instructionProfiles?.map((instruction) => instruction.computeUnitsConsumed) ?? [];
 
   return (
@@ -725,19 +1068,10 @@ export const TransactionDetailPanel: React.FC<{
       {profile?.instructionProfiles?.length ? (
         <div className="space-y-4">
           {profile.instructionProfiles.map((instruction, index) => (
-            <InstructionCard key={`instruction-${index}`} index={index} instruction={instruction} rpcUrl={rpcUrl} />
+            <InstructionCard key={`instruction-${index}`} index={index} instruction={instruction} profile={profile} rpcUrl={rpcUrl} extensions={extensions} />
           ))}
         </div>
       ) : null}
-
-      {profile?.readonlyAccountStates && Object.keys(profile.readonlyAccountStates).length > 0 && (
-        <div className="space-y-4 rounded-[1.75rem] border border-zinc-800 bg-black/40 p-5">
-          <div className="text-[10px] font-semibold tracking-[0.22em] text-zinc-500">READONLY ACCOUNTS</div>
-          {Object.entries(profile.readonlyAccountStates).map(([address, accountState]) => (
-            <ReadonlyAccountCard key={address} address={address} accountState={accountState} rpcUrl={rpcUrl} />
-          ))}
-        </div>
-      )}
 
       <LogsBlock logs={entry.logs} />
     </div>

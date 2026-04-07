@@ -1,6 +1,6 @@
 'use client';
 
-import { computeHexDiff, getProgramType } from '@/lib/transaction-inspector-utils';
+import { computeHexDiff, getProgramType } from '@surfpool/svm';
 import React, { useEffect, useMemo, useRef } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
