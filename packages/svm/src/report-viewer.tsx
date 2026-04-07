@@ -62,7 +62,7 @@ const DetailModal: React.FC<{
           </button>
         </div>
         <div className="max-h-[calc(100vh-8rem)] overflow-y-auto rounded-b-[2rem] px-6 py-6">
-          <TransactionDetailPanel entry={entry} profile={profile} rpcUrl={instance.rpc_url} />
+          <TransactionDetailPanel entry={entry} profile={profile} rpcUrl={instance.rpc_url} showExplorerButton={false} />
         </div>
       </div>
     </div>

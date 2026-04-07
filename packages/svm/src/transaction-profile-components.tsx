@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useId, useMemo, useState } from 'react';
+import React, { createContext, useContext, useId, useMemo, useState } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
 import { truncateAddress as truncateAddressUtil } from './lib/address-utils';
@@ -20,6 +20,8 @@ import {
 } from './lib/transaction-profile-utils';
 
 type ViewMode = 'parsed' | 'hex';
+
+const ExplorerButtonContext = createContext(true);
 
 const isStructuredAccountJson = (
   value: unknown
@@ -41,6 +43,7 @@ interface AddressChipProps {
   address: string;
   rpcUrl?: string;
   aggressiveTruncate?: boolean;
+  showExplorerButton?: boolean;
   className?: string;
 }
 
@@ -66,9 +69,11 @@ const AddressChip: React.FC<AddressChipProps> = ({
   address,
   rpcUrl,
   aggressiveTruncate = false,
+  showExplorerButton,
   className,
 }) => {
   const { copiedStates, copyToClipboard } = useCopyState();
+  const contextShowExplorer = useContext(ExplorerButtonContext);
 
   return (
     <AddressDisplay
@@ -79,6 +84,7 @@ const AddressChip: React.FC<AddressChipProps> = ({
       truncateAddress={truncateAddressUtil}
       copyId={`address-${address}`}
       aggressiveTruncate={aggressiveTruncate}
+      showExplorerButton={showExplorerButton ?? contextShowExplorer}
       className={className}
     />
   );
@@ -1028,11 +1034,13 @@ export const TransactionDetailPanel: React.FC<{
   entry: TransactionReportEntry;
   profile: TransactionProfile | null;
   rpcUrl?: string;
+  showExplorerButton?: boolean;
   extensions?: AccountExtensionProps;
-}> = ({ entry, profile, rpcUrl, extensions }) => {
+}> = ({ entry, profile, rpcUrl, showExplorerButton = true, extensions }) => {
   const instructionValues = profile?.instructionProfiles?.map((instruction) => instruction.computeUnitsConsumed) ?? [];
 
   return (
+    <ExplorerButtonContext.Provider value={showExplorerButton}>
     <div className="space-y-6">
       <div className="rounded-[1.75rem] border border-zinc-800 bg-black/40 p-5">
         <div className="grid gap-4 md:grid-cols-2">
@@ -1075,5 +1083,6 @@ export const TransactionDetailPanel: React.FC<{
 
       <LogsBlock logs={entry.logs} />
     </div>
+    </ExplorerButtonContext.Provider>
   );
 };
