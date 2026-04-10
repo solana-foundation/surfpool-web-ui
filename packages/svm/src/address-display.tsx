@@ -13,6 +13,7 @@ interface AddressDisplayProps {
   copyId: string;
   className?: string;
   showCopyButton?: boolean;
+  showExplorerButton?: boolean;
   aggressiveTruncate?: boolean;
   rpcUrl?: string;
 }
@@ -25,6 +26,7 @@ const AddressDisplay: React.FC<AddressDisplayProps> = ({
   copyId,
   className = "",
   showCopyButton = true,
+  showExplorerButton = true,
   aggressiveTruncate = false,
   rpcUrl = ""
 }) => {
@@ -69,16 +71,18 @@ const AddressDisplay: React.FC<AddressDisplayProps> = ({
           )}
         </button>
       )}
-      <button
-        onClick={(e: React.MouseEvent) => {
-          e.stopPropagation();
-          window.open(explorerUrl, '_blank');
-        }}
-        aria-label={`Open ${address} in Solana Explorer`}
-        className="flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
-      >
-        <ArrowTopRightOnSquareIcon className="h-2.5 w-2.5" />
-      </button>
+      {showExplorerButton && (
+        <button
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            window.open(explorerUrl, '_blank');
+          }}
+          aria-label={`Open ${address} in Solana Explorer`}
+          className="flex h-4 w-4 items-center justify-center text-gray-400 transition-colors hover:text-gray-300"
+        >
+          <ArrowTopRightOnSquareIcon className="h-2.5 w-2.5" />
+        </button>
+      )}
     </div>
   );
 };

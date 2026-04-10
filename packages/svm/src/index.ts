@@ -4,6 +4,9 @@ export { default as Faucet } from './faucet';
 export { default as AddressDisplay } from './address-display';
 export { default as TokenAmountDisplay } from './token-amount-display';
 export { default as TransactionInspector } from './transaction-inspector';
+export { default as SurfpoolReportViewer } from './report-viewer';
+export * from './transaction-profile-components';
+export * from './lib/transaction-profile-utils';
 
 // Services
 export { solanaWebSocketService, SolanaWebSocketService } from './lib/solana-websocket-service';
