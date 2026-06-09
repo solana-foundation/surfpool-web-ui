@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "toolchain",
+    "sdk",
     "rpc",
     "iac",
     "resources"
