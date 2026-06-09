@@ -90,7 +90,7 @@ let program_id = cheats.deploy(
 
 ```ts
 const surfnet = Surfnet.start();
-const programId = "DemoProgramID11111111111111111111111111111";
+const programId = "DemoProgram111111111111111111111111111111111";
 
 surfnet.deploy({
   programId,
@@ -123,7 +123,7 @@ use surfpool_sdk::{Pubkey, Surfnet};
 const PROGRAM_BYTES: &[u8] = include_bytes!("../fixtures/my_program.so");
 
 let cheats = Surfnet::start().await?.cheatcodes();
-let program_id: Pubkey = "DemoProgramID11111111111111111111111111111".parse()?;
+let program_id: Pubkey = "DemoProgram111111111111111111111111111111111".parse()?;
 
 cheats.deploy(
     DeployProgram::new(program_id).so_bytes(PROGRAM_BYTES.to_vec()),
