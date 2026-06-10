@@ -1500,6 +1500,7 @@
       }
     },
     "ExportSnapshotFilter": {
+      "description": "Filter controlling which accounts are written to the exported snapshot. Precedence (highest wins): `excludeAccounts` > `includeAccounts` > `excludeSysvars` / `excludeFeatureGates`. An account explicitly listed in `includeAccounts` is always exported (unless also in `excludeAccounts`), even if it would otherwise be filtered by `excludeSysvars` or `excludeFeatureGates`.",
       "type": "object",
       "properties": {
         "includeProgramAccounts": {
@@ -1510,7 +1511,7 @@
           ]
         },
         "includeAccounts": {
-          "description": "List of specific account public keys to include.",
+          "description": "List of specific account public keys to include. Pubkeys listed here bypass `excludeSysvars` and `excludeFeatureGates`, but are still removed if also present in `excludeAccounts`.",
           "type": [
             "array",
             "null"
@@ -1520,7 +1521,7 @@
           }
         },
         "excludeAccounts": {
-          "description": "List of specific account public keys to exclude.",
+          "description": "List of specific account public keys to exclude. Takes precedence over every other filter, including `includeAccounts`, `excludeSysvars`, and `excludeFeatureGates`.",
           "type": [
             "array",
             "null"
@@ -1528,6 +1529,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "excludeSysvars": {
+          "description": "If true, omit accounts owned by the sysvar program (`Sysvar1111111111111111111111111111111111111`). Defaults to false (fully backward compatible). Pubkeys explicitly listed in `includeAccounts` bypass this filter.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "excludeFeatureGates": {
+          "description": "If true, omit accounts whose pubkey appears in agave's `FEATURE_NAMES` registry. Defaults to false (fully backward compatible). Note: the feature-gate set is frozen at the agave-feature-set version compiled into the running surfpool binary — feature gates introduced upstream after that version will not be excluded until surfpool itself is upgraded. Pubkeys explicitly listed in `includeAccounts` bypass this filter.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       }
     },
