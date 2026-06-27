@@ -171,6 +171,19 @@ interface SetTokenAccountUpdate {
   delegatedAmount?: number;
   closeAuthority?: string;
   clearCloseAuthority?: boolean;
+  confidential?: ConfidentialTransferAccountUpdate; // Token-2022 only
+}
+
+// Configures the Token-2022 confidential-transfer extension on the account.
+// Keys are the owner's, derived from their wallet signature.
+interface ConfidentialTransferAccountUpdate {
+  elgamalPubkey: string;         // required; base58/base64, 32 bytes
+  aesKey: string;                // required; base58/base64, 16 bytes
+  amount?: number;               // confidential available balance (base units); default 0
+  approved?: boolean;            // default true
+  allowConfidentialCredits?: boolean;    // default true
+  allowNonConfidentialCredits?: boolean; // default true
+  maximumPendingBalanceCreditCounter?: number; // default 65536
 }
 ```
 

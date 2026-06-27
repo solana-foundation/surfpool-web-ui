@@ -260,6 +260,27 @@ surfnet.setTokenAccount(owner.publicKey, USDC, { clearDelegate: true });
 </CodeBlockTab>
 </CodeBlockTabs>
 
+### Confidential transfers (Token-2022)
+
+For Token-2022 mints with the confidential-transfer extension, `setTokenAccount` can also configure — and optionally fund — a confidential account directly, skipping the real multi-transaction `ConfigureAccount → Deposit → ApplyPendingBalance` flow (which otherwise needs the ZK ElGamal Proof program and owner signatures).
+
+Confidential balances are encrypted, so you supply the owner's keys: `elgamalPubkey` (what amounts are encrypted to) and `aesKey` (what produces the owner-readable balance). Both are derived deterministically from the owner's wallet signature, so the caller — who holds the keypair — derives and passes them in.
+
+```ts
+surfnet.setTokenAccount(owner.publicKey, USDPT, {
+  confidential: {
+    elgamalPubkey, // base58, 32 bytes — owner's ElGamal public key
+    aesKey, // base58, 16 bytes — owner's AES key
+    amount: 100_000_000, // confidential available balance (base units); omit for receive-only
+    approved: true,
+  },
+});
+```
+
+<Callout type="info" title="Token-2022 only, owner-derived keys">
+Confidential transfers require the Token-2022 program. `aesKey` is required even for a zero-balance receive-only account — it produces a valid `encrypt(0)` the owner can read. When the mint has a transfer-fee config, the companion `ConfidentialTransferFeeAmount` extension is added automatically. See the [`surfnet_setTokenAccount` RPC reference](/rpc/cheatcodes) for the full field list.
+</Callout>
+
 ## Reset Accounts To Upstream State
 
 `resetAccount` discards any local mutations and re-fetches the account from the upstream RPC. Pass `includeOwnedAccounts: true` to also reset every account owned by the target — useful when resetting a program and all of its PDAs.
