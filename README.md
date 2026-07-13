@@ -1,5 +1,8 @@
 # Surfpool Studio UI
 
+> [!IMPORTANT]
+> **This repository is being archived.** The Surfpool documentation has moved to the [Solana developer docs](https://solana.com/docs/tools/surfpool). Please open documentation PRs against [`solana-foundation/solana-com`](https://github.com/solana-foundation/solana-com/tree/main/apps/docs/content/docs/en/tools) instead of this repo.
+
 Monorepo for all Surfpool front-end applications and shared packages. Built with [Turborepo](https://turbo.build/repo), [pnpm](https://pnpm.io/), [Next.js](https://nextjs.org/), and [Tailwind CSS v4](https://tailwindcss.com/).
 
 ## Getting Started
