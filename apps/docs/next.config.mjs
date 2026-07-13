@@ -69,6 +69,8 @@ const nextConfig = {
         destination: `${NEW_DOCS_BASE}/${to}`,
         permanent: true,
       })),
+      // Any unmapped path lands on the new docs home.
+      { source: '/:path*', destination: NEW_DOCS_BASE, permanent: true },
     ];
   },
   turbopack: {
