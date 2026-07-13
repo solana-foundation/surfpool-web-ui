@@ -73,7 +73,7 @@ function Header() {
           <SurfpoolTypo className="h-5 hidden sm:block" variant="dark" />
         </a>
         <nav className="hidden items-center gap-6 md:flex" aria-label="Main navigation">
-          <a href="https://docs.surfpool.run" className="text-sm text-zinc-400 transition-colors hover:text-white">
+          <a href="https://solana.com/docs/tools/surfpool" className="text-sm text-zinc-400 transition-colors hover:text-white">
             Docs
           </a>
           <a href="/blog" className="text-sm text-zinc-400 transition-colors hover:text-white">
@@ -116,7 +116,7 @@ function Hero() {
             <Button variant="primary" size="lg" onClick={open}>
               Get Started
             </Button>
-            <Button variant="secondary" size="lg" href="https://docs.surfpool.run">
+            <Button variant="secondary" size="lg" href="https://solana.com/docs/tools/surfpool">
               Documentation
             </Button>
           </div>
@@ -762,7 +762,7 @@ function Footer() {
             >
               GitHub
             </a>
-            <a href="https://docs.surfpool.run" className="text-sm text-zinc-500 transition-colors hover:text-white">
+            <a href="https://solana.com/docs/tools/surfpool" className="text-sm text-zinc-500 transition-colors hover:text-white">
               Docs
             </a>
             <a
@@ -860,7 +860,7 @@ function InstallPanel() {
               </div>
 
               <div className="mt-6 flex items-center gap-4">
-                <Button variant="primary" size="lg" href="https://docs.surfpool.run">
+                <Button variant="primary" size="lg" href="https://solana.com/docs/tools/surfpool">
                   Read the Docs
                 </Button>
                 <Button variant="secondary" size="lg" href="https://github.com/txtx/surfpool">
