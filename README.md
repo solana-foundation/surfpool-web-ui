@@ -1,7 +1,7 @@
 # Surfpool Studio UI
 
 > [!IMPORTANT]
-> **This repository is being archived.** The Surfpool documentation has moved to the [Solana developer docs](https://solana.com/docs/tools/surfpool). Please open documentation PRs against [`solana-foundation/solana-com`](https://github.com/solana-foundation/solana-com/tree/main/apps/docs/content/docs/en/tools) instead of this repo.
+> **The Surfpool documentation has moved to the [Solana developer docs](https://solana.com/docs/tools/surfpool).** The `apps/docs` site is now a redirect-only shell — please open documentation PRs against [`solana-foundation/solana-com`](https://github.com/solana-foundation/solana-com/tree/main/apps/docs/content/docs/en/tools) instead. The rest of this repo (studio, surfnet, www, and shared packages) remains active.
 
 Monorepo for all Surfpool front-end applications and shared packages. Built with [Turborepo](https://turbo.build/repo), [pnpm](https://pnpm.io/), [Next.js](https://nextjs.org/), and [Tailwind CSS v4](https://tailwindcss.com/).
 
@@ -22,7 +22,7 @@ surfpool-studio-ui/
 │   ├── studio/     # Developer dashboard (embedded in Surfpool CLI)
 │   ├── surfnet/    # Public network profile pages
 │   ├── www/        # Marketing site (surfpool.run)
-│   └── docs/       # Documentation site (docs.surfpool.run)
+│   └── docs/       # Redirect shell (docs.surfpool.run → solana.com)
 ├── packages/
 │   ├── ui/         # Design system & component library (+ Storybook)
 │   ├── svm/        # Solana-specific React components
@@ -85,21 +85,9 @@ The public-facing website at [surfpool.run](https://surfpool.run). A dark-themed
 cd apps/www && pnpm dev   # http://localhost:3002
 ```
 
-### `apps/docs` — Documentation Site
+### `apps/docs` — Documentation (Redirect Shell)
 
-Developer documentation at [docs.surfpool.run](https://docs.surfpool.run). Built on [Fumadocs](https://fumadocs.vercel.app/).
-
-- Full MDX documentation system with sidebar navigation
-- RPC method reference with interactive JSON schemas
-- WebSocket reference documentation
-- Search API
-- Shiki syntax highlighting
-
-**Stack:** Next.js 16, React 19, Tailwind CSS v4, Fumadocs.
-
-```bash
-cd apps/docs && pnpm dev
-```
+Formerly the developer docs at [docs.surfpool.run](https://docs.surfpool.run). The content now lives in the [Solana developer docs](https://solana.com/docs/tools/surfpool); this app retains only the redirect configuration that forwards `docs.surfpool.run` to the new home.
 
 ## Packages
 
