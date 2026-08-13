@@ -6,6 +6,7 @@ import { useAppConfig } from '@/hooks/use-app-config';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon } from '@heroicons/react/24/solid';
+import { snapshotDownloadContents } from '@/lib/scenarios-api';
 import { getTimeUnitInMs, logger } from '@surfpool/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -183,12 +184,9 @@ export const SlotsGrid: React.FC = () => {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        logger.log('📸 Export snapshot response:', data);
+        const jsonString = snapshotDownloadContents(await response.text());
 
-        if (data.result) {
-          // Create a blob from the JSON data
-          const jsonString = JSON.stringify(data.result, null, 2);
+        if (jsonString) {
           const blob = new Blob([jsonString], { type: 'application/json' });
 
           // Create download link
@@ -210,7 +208,7 @@ export const SlotsGrid: React.FC = () => {
 
           logger.log('✅ Snapshot exported successfully');
         } else {
-          console.error('❌ Export snapshot failed:', data.error);
+          console.error('❌ Export snapshot failed: empty or invalid snapshot');
         }
       } else {
         console.error('❌ HTTP error during export:', response.status);

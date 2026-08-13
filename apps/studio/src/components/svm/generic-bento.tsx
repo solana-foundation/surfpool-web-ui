@@ -83,35 +83,30 @@ export default function GenericBento<T extends BentoItem>({
   // Track last initialTab to detect changes
   const [lastInitialTab, setLastInitialTab] = useState<string | undefined>(undefined);
 
-  // Reset initialization when initialSelectedId changes to a different non-undefined value
+  // Reset initialization whenever the deep-linked id changes, including the
+  // undefined -> id case: a page that opened without an id has already marked
+  // itself initialized, so without a reset the arriving id is never resolved.
   useEffect(() => {
-    // Only reset if changing from one ID to another, not from undefined to an ID
-    const shouldReset =
-      initialSelectedId !== lastInitialSelectedId &&
-      lastInitialSelectedId !== undefined &&
-      initialSelectedId !== undefined;
+    if (initialSelectedId === lastInitialSelectedId) return;
 
-    if (shouldReset) {
-      logger.log('GenericBento: initialSelectedId changed to different ID', lastInitialSelectedId, '->', initialSelectedId, 'tab:', initialTab);
-      setHasInitialized(false);
-      setLastInitialSelectedId(initialSelectedId);
+    logger.log('GenericBento: initialSelectedId changed', lastInitialSelectedId, '->', initialSelectedId, 'tab:', initialTab);
+    setLastInitialSelectedId(initialSelectedId);
 
-      // Update tab and expansion state if initialTab is provided
-      if (initialTab) {
-        logger.log('GenericBento: Setting active tab to', initialTab);
-        setActiveTab(initialTab);
-        setIsExpanded(initialTab !== defaultTab);
-        setLastInitialTab(initialTab);
-      } else {
-        logger.log('GenericBento: Setting active tab to default', defaultTab);
-        setActiveTab(defaultTab);
-        setIsExpanded(false);
-        setLastInitialTab(undefined);
-      }
-    } else if (initialSelectedId && !lastInitialSelectedId) {
-      // First time getting an initialSelectedId, just track it
-      logger.log('GenericBento: Tracking initial selectedId:', initialSelectedId);
-      setLastInitialSelectedId(initialSelectedId);
+    if (!initialSelectedId) return;
+
+    setHasInitialized(false);
+
+    // Update tab and expansion state if initialTab is provided
+    if (initialTab) {
+      logger.log('GenericBento: Setting active tab to', initialTab);
+      setActiveTab(initialTab);
+      setIsExpanded(initialTab !== defaultTab);
+      setLastInitialTab(initialTab);
+    } else {
+      logger.log('GenericBento: Setting active tab to default', defaultTab);
+      setActiveTab(defaultTab);
+      setIsExpanded(false);
+      setLastInitialTab(undefined);
     }
   }, [initialSelectedId, lastInitialSelectedId, initialTab, defaultTab]);
 

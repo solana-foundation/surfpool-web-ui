@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import ScenariosBento from '@/components/svm/scenarios-bento';
+import { useAppConfig } from '@/hooks/use-app-config';
+import { parseScenariosJson } from '@/lib/scenarios-api';
+import { Scenario } from '@/lib/scenarios-data';
 import { logger } from '@surfpool/shared';
 import { useSearchParams } from 'next/navigation';
-import ScenariosBento from '@/components/svm/scenarios-bento';
-import { Scenario } from '@/lib/scenarios-data';
-import { useAppConfig } from '@/hooks/use-app-config';
+import { Suspense, useEffect, useState } from 'react';
 
 function ScenariosContent() {
   const searchParams = useSearchParams();
@@ -35,7 +36,7 @@ function ScenariosContent() {
           throw new Error(`Failed to fetch scenarios: ${response.status}`);
         }
 
-        const data = await response.json();
+        const data = parseScenariosJson(await response.text());
         logger.log('Loaded scenarios from API:', data);
 
         // Convert API response to scenarios array
@@ -102,7 +103,7 @@ function ScenariosContent() {
           });
         } else {
           // API returned an object with scenario IDs as keys
-          loadedScenarios = Object.entries(data).map(([id, scenarioData]: [string, any]) => {
+          loadedScenarios = Object.entries(data as Record<string, any>).map(([id, scenarioData]: [string, any]) => {
             const scenario: Scenario = {
               id: scenarioData.id || id, // Prefer scenario.id, fallback to key
               name: scenarioData.name || `Scenario ${id}`,
@@ -213,11 +214,13 @@ function ScenariosContent() {
 
 export default function Scenarios() {
   return (
-    <Suspense fallback={
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading scenarios...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center">
+          <div className="text-lg text-zinc-600 dark:text-zinc-400">Loading scenarios...</div>
+        </div>
+      }
+    >
       <ScenariosContent />
     </Suspense>
   );

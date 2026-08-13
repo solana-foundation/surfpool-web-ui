@@ -1,14 +1,30 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
-import { buildUpdatePayload, createScenarioPayload, scenarioToBentoItem } from '@/lib/scenarios-api';
+import {
+  buildUpdatePayload,
+  createScenarioPayload,
+  scenarioImportPayload,
+  scenarioToBentoItem,
+  serializeScenarioJson,
+} from '@/lib/scenarios-api';
 import type { Scenario } from '@/lib/scenarios-data';
 import { PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Button, Dialog, DialogActions, DialogDescription, DialogTitle } from '@surfpool/ui';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogDescription,
+  DialogTitle,
+  Dropdown,
+  DropdownButton,
+  DropdownItem,
+  DropdownMenu,
+} from '@surfpool/ui';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
@@ -71,6 +87,39 @@ export default function ScenariosBento({
     }
   };
 
+  // Import scenario from a downloaded file
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const handleImportScenario = async (file: File) => {
+    setImportError(null);
+    const result = scenarioImportPayload(await file.text(), crypto.randomUUID());
+
+    if ('error' in result) {
+      setImportError(result.error);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${studioUrl}/v1/scenarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: result.payload,
+      });
+
+      if (!response.ok) {
+        setImportError(`Import failed — the surfnet returned HTTP ${response.status}`);
+        return;
+      }
+
+      logger.log('Scenario imported:', result.name);
+      onRefresh?.();
+    } catch (error) {
+      logger.log('Scenario import failed:', error);
+      setImportError('Import failed — is the surfnet running?');
+    }
+  };
+
   // Create new scenario
   const handleCreateScenario = async () => {
     const newScenario: Scenario = {
@@ -86,7 +135,7 @@ export default function ScenariosBento({
       const response = await fetch(`${studioUrl}/v1/scenarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createScenarioPayload(newScenario)),
+        body: serializeScenarioJson(createScenarioPayload(newScenario)),
       });
 
       if (!response.ok) {
@@ -94,12 +143,9 @@ export default function ScenariosBento({
       }
 
       logger.log('Scenario created successfully:', newScenario.id);
+      setScenarios((prev) => [...prev, newScenario]);
       onRefresh?.();
-
-      setTimeout(() => {
-        logger.log('Navigating to new scenario:', newScenario.id);
-        router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
-      }, 100);
+      router.push(`/scenarios?id=${newScenario.id}&tab=overview`);
 
       return newScenario.id;
     } catch (error) {
@@ -122,7 +168,7 @@ export default function ScenariosBento({
       const response = await fetch(`${studioUrl}/v1/scenarios/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildUpdatePayload(updatedScenario)),
+        body: serializeScenarioJson(buildUpdatePayload(updatedScenario)),
       });
 
       if (!response.ok) {
@@ -282,14 +328,34 @@ export default function ScenariosBento({
 
       {/* Add New Scenario Button */}
       {!isDetailPaneOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <button
-            onClick={handleCreateScenario}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-pink-500 text-white shadow-lg transition-all duration-200 hover:scale-110 hover:bg-pink-400 hover:shadow-xl"
-            title="Create new scenario"
-          >
-            <PlusIcon className="h-7 w-7" />
-          </button>
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+          {!!importError && (
+            <div className="rounded-lg bg-zinc-900/90 px-3 py-2 text-sm text-red-400 shadow-lg">{importError}</div>
+          )}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleImportScenario(file);
+              e.target.value = '';
+            }}
+          />
+          <Dropdown>
+            <DropdownButton
+              as="button"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-pink-500 text-white shadow-lg transition-all duration-200 hover:scale-110 hover:bg-pink-400 hover:shadow-xl"
+              title="Add a scenario"
+            >
+              <PlusIcon className="h-7 w-7" />
+            </DropdownButton>
+            <DropdownMenu anchor="top end">
+              <DropdownItem onClick={handleCreateScenario}>New scenario</DropdownItem>
+              <DropdownItem onClick={() => importInputRef.current?.click()}>Import from file…</DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
         </div>
       )}
 

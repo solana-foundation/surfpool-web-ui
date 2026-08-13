@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { LosslessNumber } from 'lossless-json';
 import {
   buildAiPrompt,
   buildUpdatePayload,
   createScenarioPayload,
   flattenOverrideValues,
+  parseScenariosJson,
+  scenarioDownloadFile,
+  scenarioImportPayload,
   scenarioToBentoItem,
+  serializeScenarioJson,
+  snapshotDownloadContents,
+  toScenarioNumber,
 } from './scenarios-api';
 import type { Scenario } from './scenarios-data';
 
@@ -241,6 +248,111 @@ describe('buildAiPrompt', () => {
   });
 });
 
+describe('scenarioImportPayload', () => {
+  const downloaded = JSON.stringify({
+    id: 'original',
+    name: 'SOL Crash',
+    description: 'a scenario',
+    tags: ['pyth'],
+    overrides: [{ id: 'ov', values: { 'price_message.price': 8500000000 } }],
+  });
+
+  it('replaces the id so an import cannot collide with its source', () => {
+    const result = scenarioImportPayload(downloaded, 'fresh-id');
+    expect('error' in result).toBe(false);
+    const payload = JSON.parse((result as { payload: string }).payload);
+    expect(payload.id).toBe('fresh-id');
+    expect(payload.name).toBe('SOL Crash');
+    expect(payload.overrides[0].values['price_message.price']).toBe(8500000000);
+    expect(payload.tags).toEqual(['pyth']);
+  });
+
+  it('keeps integers beyond double precision exact', () => {
+    const huge = '{"id":"x","name":"x","overrides":[{"values":{"price_message.price":9223372036854775807}}]}';
+    const result = scenarioImportPayload(huge, 'fresh-id') as { payload: string };
+    expect(result.payload).toContain('9223372036854775807');
+  });
+
+  it('defaults a missing name, description and tags', () => {
+    const bare = '{"id":"x","overrides":[]}';
+    const payload = JSON.parse((scenarioImportPayload(bare, 'fresh-id') as { payload: string }).payload);
+    expect(payload.name).toBe('Imported scenario');
+    expect(payload.description).toBe('');
+    expect(payload.tags).toEqual([]);
+  });
+
+  it('rejects invalid JSON and anything that is not a scenario', () => {
+    expect(scenarioImportPayload('not json', 'id')).toEqual({ error: 'That file is not valid JSON' });
+    expect(scenarioImportPayload('[]', 'id')).toEqual({ error: 'That file does not contain a scenario' });
+    expect(scenarioImportPayload('{"id":"x"}', 'id')).toEqual({
+      error: 'That file does not contain a scenario',
+    });
+  });
+});
+
+describe('scenarioDownloadFile', () => {
+  const response = JSON.stringify([
+    { id: 'other', name: 'Other', overrides: [], tags: [] },
+    {
+      id: 'wanted',
+      name: 'SOL Price Crash $85',
+      description: 'a scenario',
+      tags: ['pyth'],
+      overrides: [{ id: 'ov', values: { 'price_message.price': 8500000000 } }],
+    },
+  ]);
+
+  it('returns the requested scenario as a POST-shaped body', () => {
+    const file = scenarioDownloadFile(response, 'wanted');
+    expect(file).not.toBeNull();
+    const parsed = JSON.parse(file!.contents);
+    expect(parsed.id).toBe('wanted');
+    expect(parsed.tags).toEqual(['pyth']);
+    expect(parsed.overrides[0].values['price_message.price']).toBe(8500000000);
+  });
+
+  it('derives a filename from the scenario name', () => {
+    expect(scenarioDownloadFile(response, 'wanted')!.filename).toBe('scenario-sol-price-crash-85.json');
+  });
+
+  it('falls back to the id when the name has no usable characters', () => {
+    const unnamed = JSON.stringify([{ id: 'abc123', name: '///', overrides: [] }]);
+    expect(scenarioDownloadFile(unnamed, 'abc123')!.filename).toBe('scenario-abc123.json');
+  });
+
+  it('keeps integers beyond double precision exact', () => {
+    const huge = '[{"id":"big","name":"big","overrides":[{"values":{"price_message.price":9223372036854775807}}]}]';
+    expect(scenarioDownloadFile(huge, 'big')!.contents).toContain('9223372036854775807');
+  });
+
+  it('round-trips an object-map scenario without losing a large integer', () => {
+    const exact = '10103697788335729001';
+    const objectMap =
+      `{"wanted":{"name":"Object map","tags":["pyth"],` +
+      `"overrides":[{"id":"ov","values":{"sqrt_price":${exact}}}]}}`;
+
+    const file = scenarioDownloadFile(objectMap, 'wanted');
+    expect(file).not.toBeNull();
+    expect(file!.contents).toContain(`"id": "wanted"`);
+    expect(file!.contents).toContain(exact);
+
+    const imported = scenarioImportPayload(file!.contents, 'fresh-id');
+    expect('error' in imported).toBe(false);
+    const payload = (imported as { payload: string }).payload;
+    expect(payload).toContain(exact);
+
+    const scenario = parseScenariosJson(payload) as Record<string, unknown>;
+    expect(scenario.id).toBe('fresh-id');
+    expect(scenario.tags).toEqual(['pyth']);
+  });
+
+  it('returns null for an unknown id, an invalid object body, or invalid JSON', () => {
+    expect(scenarioDownloadFile(response, 'missing')).toBeNull();
+    expect(scenarioDownloadFile('{"id":"wanted"}', 'wanted')).toBeNull();
+    expect(scenarioDownloadFile('not json', 'wanted')).toBeNull();
+  });
+});
+
 describe('flattenOverrideValues', () => {
   // The account-shaped editing state: values edited in the UI sit nested under
   // price_message, while feed_id (constant_ref) and posted_slot live at the top level.
@@ -304,5 +416,88 @@ describe('flattenOverrideValues', () => {
 
   it('returns empty object for undefined input', () => {
     expect(flattenOverrideValues(undefined, ['a.b'])).toEqual({});
+  });
+});
+
+describe('u64 precision across the edit/save flow (path 2)', () => {
+  // An odd u64 above Number.MAX_SAFE_INTEGER (2**53 - 1). Odd + large so any rounding
+  // (which snaps to an even double) is detectable. Kept as a string so the source
+  // literal is never itself rounded.
+  const EXACT = '10103697788335729001';
+
+  it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
+    const getJson =
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
+      `"values":{"sqrt_price":${EXACT}}}]}]`;
+    expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
+  });
+
+  it('keeps safe integers as plain numbers', () => {
+    const parsed = parseScenariosJson('{"v":55555555555}') as { v: unknown };
+    expect(typeof parsed.v).toBe('number');
+    expect(parsed.v).toBe(55555555555);
+  });
+
+  it('toScenarioNumber returns a LosslessNumber for an unsafe value and a number for a safe one', () => {
+    const big = toScenarioNumber(EXACT);
+    expect(big).toBeInstanceOf(LosslessNumber);
+    expect(String(big)).toBe(EXACT);
+    expect(typeof toScenarioNumber('42')).toBe('number');
+  });
+
+  it('flattenOverrideValues treats a LosslessNumber as a value, not a nested object', () => {
+    const flat = flattenOverrideValues({ sqrt_price: new LosslessNumber(EXACT), nested: { a: 1 } }, []);
+    expect(String(flat.sqrt_price)).toBe(EXACT);
+    expect(flat.nested).toBeUndefined();
+  });
+
+  it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
+    const getJson =
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
+      `"values":{"sqrt_price":${EXACT}}}]}]`;
+    const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
+    const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
+    const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
+    expect(patchBody).toContain(EXACT);
+  });
+
+  it('serializes a LosslessNumber as a JSON number for the register/Play RPC payload, not an object', () => {
+    const body = {
+      method: 'surfnet_registerScenario',
+      params: [{ overrides: [{ values: { sqrt_price: new LosslessNumber(EXACT) } }] }],
+    };
+    const serialized = serializeScenarioJson(body);
+    expect(serialized).toContain(`"sqrt_price":${EXACT}`);
+    expect(serialized).not.toContain('isLosslessNumber');
+    // Native JSON.stringify would corrupt the LosslessNumber into an object — the Play bug.
+    expect(JSON.stringify(body)).toContain('isLosslessNumber');
+  });
+
+  it('pretty-prints a snapshot losslessly, keeping the exact u64 and indentation', () => {
+    const serialized = serializeScenarioJson({ lamports: new LosslessNumber(EXACT) }, 2);
+    expect(serialized).toContain(`"lamports": ${EXACT}`);
+    expect(serialized).toContain('\n');
+  });
+
+  it('snapshotDownloadContents downloads only result.value (the account map), dropping the RPC envelope', () => {
+    const account = 'HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ';
+    // Raw RPC response: result carries both context and the account map under value.
+    const raw = `{"result":{"context":{"slot":438604952,"apiVersion":"4.1.2"},"value":{"${account}":{"lamports":${EXACT},"owner":"11111111111111111111111111111111"}}}}`;
+    const out = snapshotDownloadContents(raw);
+    expect(out).not.toBeNull();
+    // surfpool restore expects the bare account map — no context, no RPC envelope.
+    expect(out).not.toContain('context');
+    expect(out).not.toContain('438604952');
+    expect(out).toContain(account);
+    // Large balances stay exact.
+    expect(out).toContain(`"lamports": ${EXACT}`);
+    // Top-level keys are the accounts themselves, not result/context/value.
+    const parsed = parseScenariosJson(out as string) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual([account]);
+  });
+
+  it('snapshotDownloadContents returns null when there is no snapshot value or invalid JSON', () => {
+    expect(snapshotDownloadContents('{"result":{"context":{"slot":1}}}')).toBeNull();
+    expect(snapshotDownloadContents('not json')).toBeNull();
   });
 });
