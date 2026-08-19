@@ -14,13 +14,13 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'drift', name: 'Drift', icon: '/assets/drift.svg' },
   { id: 'kamino', name: 'Kamino', icon: '/assets/kamino.svg' },
   { id: 'meteora', name: 'Meteora', icon: '/assets/meteora.svg' },
+  { id: 'pump', name: 'Pump', icon: '/assets/pump.svg' },
+  { id: 'pumpswap', name: 'PumpSwap', icon: '/assets/pumpswap.svg' },
 ];
 
 // Shared protocol icon mappings (derived from PROTOCOLS for backwards compatibility)
-export const PROTOCOL_ICONS: Record<string, string> = Object.fromEntries(
-  PROTOCOLS.map(p => [p.id, p.icon])
-);
+export const PROTOCOL_ICONS: Record<string, string> = Object.fromEntries(PROTOCOLS.map((p) => [p.id, p.icon]));
 
-export function getProtocolIcon(protocolId: string, fallback = '/assets/default.svg'): string {
+export function getProtocolIcon(protocolId: string, fallback = '/assets/surfpool.svg'): string {
   return PROTOCOL_ICONS[protocolId] || fallback;
 }

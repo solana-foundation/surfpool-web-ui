@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PROTOCOLS, PROTOCOL_ICONS, getProtocolIcon } from './protocol-icons';
 
 describe('PROTOCOLS', () => {
@@ -36,7 +36,7 @@ describe('getProtocolIcon', () => {
   });
 
   it('returns default fallback for unknown protocol', () => {
-    expect(getProtocolIcon('unknown')).toBe('/assets/default.svg');
+    expect(getProtocolIcon('unknown')).toBe('/assets/surfpool.svg');
   });
 
   it('returns custom fallback for unknown protocol', () => {

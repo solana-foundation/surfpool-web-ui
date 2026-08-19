@@ -18,6 +18,7 @@ import { logger } from '@surfpool/shared';
 import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect, useRef, useState } from 'react';
+import { resolveTokenSelectorOptions } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -317,7 +318,7 @@ export default function ScenarioEditor({
   const [protocolsLoading, setProtocolsLoading] = useState(true);
 
   // Protocols to show in the scenario editor (filter the full list)
-  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift'];
+  const ENABLED_PROTOCOLS = ['Pyth', 'Raydium', 'Drift', 'Pump', 'PumpSwap'];
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -1562,18 +1563,7 @@ export default function ScenarioEditor({
                       <div className="flex items-center justify-between border-b border-zinc-700/50 p-6 shadow-lg">
                         <div className="flex items-center gap-4">
                           <img
-                            src={
-                              {
-                                pyth: '/assets/pyth.svg',
-                                switchboard: '/assets/switchboard.svg',
-                                jupiter: '/assets/jupiter.svg',
-                                raydium: '/assets/raydium.svg',
-                                whirlpool: '/assets/whirlpool.svg',
-                                drift: '/assets/drift.svg',
-                                meteora: '/assets/meteora.svg',
-                                kamino: '/assets/kamino.svg',
-                              }[selectedProtocol.id] || selectedProtocol.icon_url
-                            }
+                            src={getProtocolIcon(selectedProtocol.id, selectedProtocol.icon_url)}
                             alt={selectedProtocol.title}
                             className="h-12 w-12"
                           />
@@ -2066,16 +2056,10 @@ export default function ScenarioEditor({
                                         currentValue: string | number | undefined;
                                         isModified: boolean;
                                       }) => {
-                                        // Convert currentValue to string for comparison (handles numbers like config_index)
-                                        const currentValueStr = currentValue != null ? String(currentValue) : '';
-
-                                        // Find the currently selected option (case-insensitive for hex values)
-                                        const selectedOption =
-                                          constantDef.options.find((opt: any) =>
-                                            currentValueStr.startsWith('0x')
-                                              ? opt.value?.toLowerCase() === currentValueStr.toLowerCase()
-                                              : opt.value === currentValueStr
-                                          ) || null;
+                                        const { options, selectedOption } = resolveTokenSelectorOptions(
+                                          constantDef.options,
+                                          currentValue
+                                        );
 
                                         return (
                                           <Combobox
@@ -2085,7 +2069,7 @@ export default function ScenarioEditor({
                                                 setValue(fieldPath, option.value);
                                               }
                                             }}
-                                            options={constantDef.options}
+                                            options={options}
                                             displayValue={(option: any) => {
                                               if (!option) return '';
                                               // Display symbol from metadata if available
@@ -2097,7 +2081,13 @@ export default function ScenarioEditor({
                                               const symbol = (option.metadata?.symbol || option.id || '').toLowerCase();
                                               const label = (option.label || '').toLowerCase();
                                               const description = (option.description || '').toLowerCase();
-                                              return symbol.includes(q) || label.includes(q) || description.includes(q);
+                                              const value = (option.value || '').toLowerCase();
+                                              return (
+                                                symbol.includes(q) ||
+                                                label.includes(q) ||
+                                                description.includes(q) ||
+                                                value.includes(q)
+                                              );
                                             }}
                                             placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                             aria-label={constantDef.label}

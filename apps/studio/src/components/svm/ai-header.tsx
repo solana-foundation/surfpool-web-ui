@@ -16,14 +16,63 @@ import {
 import { PROTOCOLS } from '@/lib/protocol-icons';
 import { buildAiPrompt } from '@/lib/scenarios-api';
 import * as Headless from '@headlessui/react';
-import { ArrowRightIcon, DocumentTextIcon, StopIcon } from '@heroicons/react/24/solid';
+import {
+  ArrowRightIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DocumentTextIcon,
+  StopIcon,
+} from '@heroicons/react/24/solid';
 import { Button, Dialog, DialogActions, DialogBody, DialogTitle, Switch } from '@surfpool/ui';
 import React, { useState } from 'react';
-import { exampleScenarios, type GenerationLog } from './scenarios-bento.types';
+import { exampleScenarios, type ExampleScenario, type GenerationLog } from './scenarios-bento.types';
 
 interface AIHeaderProps {
   onRefresh?: () => void;
   onScenarioNavigate?: (scenarioId: string) => void;
+}
+
+interface ExampleScenarioChipProps {
+  disabled: boolean;
+  example: ExampleScenario;
+  onSelect: (example: ExampleScenario) => void;
+}
+
+interface ExampleScenarioRowProps {
+  disabled: boolean;
+  examples: ExampleScenario[];
+  label: string;
+  onSelect: (example: ExampleScenario) => void;
+}
+
+function ExampleScenarioChip({ disabled, example, onSelect }: ExampleScenarioChipProps) {
+  const handleSelect = () => {
+    onSelect(example);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSelect}
+      disabled={disabled}
+      className="flex shrink-0 items-center gap-2 rounded-full border border-zinc-700/50 bg-zinc-900/30 px-4 py-2 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:bg-zinc-800/50 hover:text-zinc-300 disabled:opacity-50"
+    >
+      <span>{example.icon}</span>
+      <span>{example.label}</span>
+    </button>
+  );
+}
+
+function ExampleScenarioRow({ disabled, examples, label, onSelect }: ExampleScenarioRowProps) {
+  function renderExampleScenario(example: ExampleScenario) {
+    return <ExampleScenarioChip key={example.label} disabled={disabled} example={example} onSelect={onSelect} />;
+  }
+
+  return (
+    <div role="group" aria-label={label} className="flex min-w-max items-center gap-2">
+      {examples.map(renderExampleScenario)}
+    </div>
+  );
 }
 
 export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProps) {
@@ -55,9 +104,12 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
     return stored ? JSON.parse(stored) : null;
   });
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus>({ available: false, models: [] });
+  const [canScrollExamplesLeft, setCanScrollExamplesLeft] = useState(false);
+  const [canScrollExamplesRight, setCanScrollExamplesRight] = useState(false);
 
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const currentPromptRef = React.useRef<string>('');
+  const exampleScrollerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const responseRef = React.useRef<HTMLDivElement>(null);
 
@@ -77,6 +129,29 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
   React.useEffect(() => {
     localStorage.setItem('surfpool:last-model', selectedModelId);
   }, [selectedModelId]);
+
+  React.useEffect(() => {
+    const scroller = exampleScrollerRef.current;
+    if (!scroller) return;
+
+    function updateScrollControls() {
+      const currentScroller = exampleScrollerRef.current;
+      if (!currentScroller) return;
+
+      const maxScrollLeft = currentScroller.scrollWidth - currentScroller.clientWidth;
+      setCanScrollExamplesLeft(currentScroller.scrollLeft > 1);
+      setCanScrollExamplesRight(currentScroller.scrollLeft < maxScrollLeft - 1);
+    }
+
+    scroller.addEventListener('scroll', updateScrollControls, { passive: true });
+    window.addEventListener('resize', updateScrollControls);
+    updateScrollControls();
+
+    return () => {
+      scroller.removeEventListener('scroll', updateScrollControls);
+      window.removeEventListener('resize', updateScrollControls);
+    };
+  }, []);
 
   // Find selected model
   const selectedModel =
@@ -100,6 +175,9 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
   ];
   const visibleProtocols = orderedProtocols.slice(0, PROTOCOL_ICON_LIMIT);
   const hiddenProtocolCount = orderedProtocols.length - visibleProtocols.length;
+  const exampleRowLength = Math.ceil(exampleScenarios.length / 2);
+  const firstExampleRow = exampleScenarios.slice(0, exampleRowLength);
+  const secondExampleRow = exampleScenarios.slice(exampleRowLength);
 
   const hasApiKey = (provider: AIProvider) => {
     const providerConfig = getProviderById(provider);
@@ -220,12 +298,42 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
     setIsAiProcessing(false);
   };
 
+  const handleExampleScenarioSelect = (example: ExampleScenario) => {
+    setAiPrompt(example.prompt);
+    setSelectedProtocols(new Set(example.protocols));
+    setTimeout(() => {
+      if (!inputRef.current) return;
+
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+      inputRef.current.focus();
+    }, 0);
+  };
+
+  const scrollExampleScenarios = (direction: -1 | 1) => {
+    const scroller = exampleScrollerRef.current;
+    if (!scroller) return;
+
+    scroller.scrollBy({
+      behavior: 'smooth',
+      left: direction * Math.max(scroller.clientWidth * 0.7, 280),
+    });
+  };
+
+  const handleScrollExamplesLeft = () => {
+    scrollExampleScenarios(-1);
+  };
+
+  const handleScrollExamplesRight = () => {
+    scrollExampleScenarios(1);
+  };
+
   return (
     <>
-      <div className="mb-8 pt-8">
+      <div className="mb-10 pt-8">
         <div className="mx-auto max-w-2xl">
           {/* v0-style input box */}
-          <div className="relative mb-4 overflow-hidden rounded-2xl border border-zinc-700/60 bg-gradient-to-b from-zinc-900 to-zinc-900/95 p-4 shadow-xl shadow-black/20">
+          <div className="relative mb-6 overflow-hidden rounded-2xl border border-zinc-700/60 bg-gradient-to-b from-zinc-900 to-zinc-900/95 p-4 shadow-xl shadow-black/20">
             {/* Subtle top glow */}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600/20 to-transparent" />
 
@@ -680,29 +788,47 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
             )}
           </div>
 
-          {/* Example scenario buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {exampleScenarios.map((example) => (
-              <button
-                key={example.label}
-                onClick={() => {
-                  setAiPrompt(example.prompt);
-                  setSelectedProtocols(new Set(example.protocols));
-                  setTimeout(() => {
-                    if (inputRef.current) {
-                      inputRef.current.style.height = 'auto';
-                      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
-                      inputRef.current.focus();
-                    }
-                  }, 0);
-                }}
-                disabled={isAiProcessing}
-                className="flex items-center gap-2 rounded-full border border-zinc-700/50 bg-zinc-900/30 px-4 py-2 text-sm text-zinc-400 transition-all hover:border-zinc-600 hover:bg-zinc-800/50 hover:text-zinc-300 disabled:opacity-50"
-              >
-                <span>{example.icon}</span>
-                <span>{example.label}</span>
-              </button>
-            ))}
+          <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-3">
+            <button
+              type="button"
+              aria-label="Scroll example scenarios left"
+              onClick={handleScrollExamplesLeft}
+              disabled={!canScrollExamplesLeft}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-zinc-700/70 bg-zinc-900 text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+
+            <div
+              ref={exampleScrollerRef}
+              aria-label="Example scenarios"
+              className="overflow-x-auto overscroll-x-contain scroll-smooth px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <div className="w-max space-y-3">
+                <ExampleScenarioRow
+                  disabled={isAiProcessing}
+                  examples={firstExampleRow}
+                  label="Example scenarios row 1"
+                  onSelect={handleExampleScenarioSelect}
+                />
+                <ExampleScenarioRow
+                  disabled={isAiProcessing}
+                  examples={secondExampleRow}
+                  label="Example scenarios row 2"
+                  onSelect={handleExampleScenarioSelect}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Scroll example scenarios right"
+              onClick={handleScrollExamplesRight}
+              disabled={!canScrollExamplesRight}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-zinc-700/70 bg-zinc-900 text-zinc-300 transition hover:border-zinc-500 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>

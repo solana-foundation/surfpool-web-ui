@@ -85,11 +85,7 @@ export default function GenericBento<T extends BentoItem>({
 
   // Reset initialization when initialSelectedId changes to a different non-undefined value
   useEffect(() => {
-    // Only reset if changing from one ID to another, not from undefined to an ID
-    const shouldReset =
-      initialSelectedId !== lastInitialSelectedId &&
-      lastInitialSelectedId !== undefined &&
-      initialSelectedId !== undefined;
+    const shouldReset = initialSelectedId !== undefined && initialSelectedId !== lastInitialSelectedId;
 
     if (shouldReset) {
       logger.log('GenericBento: initialSelectedId changed to different ID', lastInitialSelectedId, '->', initialSelectedId, 'tab:', initialTab);
@@ -108,10 +104,6 @@ export default function GenericBento<T extends BentoItem>({
         setIsExpanded(false);
         setLastInitialTab(undefined);
       }
-    } else if (initialSelectedId && !lastInitialSelectedId) {
-      // First time getting an initialSelectedId, just track it
-      logger.log('GenericBento: Tracking initial selectedId:', initialSelectedId);
-      setLastInitialSelectedId(initialSelectedId);
     }
   }, [initialSelectedId, lastInitialSelectedId, initialTab, defaultTab]);
 
@@ -139,9 +131,7 @@ export default function GenericBento<T extends BentoItem>({
           setSelectedItemId(initialSelectedId);
           setHasInitialized(true);
         } else {
-          // Item not found - maybe it doesn't exist
           console.warn('Deep linking: item not found', initialSelectedId, 'available IDs:', items.map(i => i.id));
-          setHasInitialized(true);
         }
       } else {
         logger.log('Deep linking: waiting for items to load, currently', items.length);
