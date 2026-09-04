@@ -25,7 +25,7 @@ Test HTTP 402 payment flows end-to-end — request tokens from the faucet, mint 
 Build and test Solana payment flows with instant finality. No rate limits, no mainnet costs — iterate fast on token transfers, subscriptions, and micropayments.
 
 ### Agent-to-Agent Payments
-Prototype autonomous agent payment channels using mpp.dev. Test machine-payable endpoints where AI agents pay for resources with Solana tokens.
+Prototype autonomous agent tabs using mpp.dev. Test machine-payable endpoints where AI agents pay for resources with Solana tokens.
 
 ### Token Operations
 Create mints, distribute tokens, and test token account management in a disposable environment that resets cleanly.
