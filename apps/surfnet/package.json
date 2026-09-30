@@ -18,7 +18,7 @@
     "@surfpool/ui": "workspace:*",
     "@tailwindcss/typography": "^0.5.19",
     "mermaid": "^11.13.0",
-    "next": "15.4.1",
+    "next": "15.5.26",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
