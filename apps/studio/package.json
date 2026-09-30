@@ -35,7 +35,7 @@
     "jose": "^6.0.10",
     "json-diff": "^1.0.6",
     "lossless-json": "^4.3.0",
-    "next": "15.4.1",
+    "next": "15.5.26",
     "pretty-json-custom-element": "^1.1.19",
     "react": "19.1.0",
     "react-dom": "19.1.0",
