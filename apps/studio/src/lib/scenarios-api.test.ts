@@ -7,6 +7,7 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  createdScenarioIdFromToolResult,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -362,6 +363,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured BisonFi market addresses', () => {
+    const result = buildAiPrompt('set SOL/USDC depth to 3 SOL and 5 USDC', new Set(['bisonfi']));
+
+    expect(result).toContain('8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo');
+    expect(result).toContain('SOL-USDC-Pool2');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -370,6 +378,32 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=bisonfi-thin-market&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('bisonfi-thin-market');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
   });
 });
 

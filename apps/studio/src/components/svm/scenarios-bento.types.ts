@@ -56,6 +56,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'Prop AMM Arbitrage',
+    prompt:
+      'Keep BisonFi quoting while its SOL/USDC mid sits 2% above Orca Whirlpool, so buying on Whirlpool and selling into BisonFi clears the fees on both venues',
+    icon: '🐃',
+    protocols: ['bisonfi', 'whirlpool'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTokenSelectorOptions, type TokenSelectorOption } from './token-selector-options';
+import {
+  BISONFI_MARKET_OPTIONS,
+  resolveBisonFiAccount,
+  resolveTokenSelectorOptions,
+  type TokenSelectorOption,
+} from './token-selector-options';
 
 const catalogOptions: TokenSelectorOption[] = [
   { id: 'catalog-token', label: 'Catalog token', value: 'CatalogMintpump' },
@@ -32,5 +37,22 @@ describe('resolveTokenSelectorOptions', () => {
 
     expect(result.selectedOption).toBe(catalogOptions[1]);
     expect(result.options).toBe(catalogOptions);
+  });
+});
+
+describe('BisonFi market selection', () => {
+  it('offers four distinct market accounts', () => {
+    expect(BISONFI_MARKET_OPTIONS).toHaveLength(4);
+    expect(new Set(BISONFI_MARKET_OPTIONS.map((option) => option.value)).size).toBe(4);
+  });
+
+  it('uses the selected account for BisonFi without changing other templates', () => {
+    expect(resolveBisonFiAccount('bisonfi-spread', { pubkey: '' }, ' CustomPool111 ')).toEqual({
+      pubkey: 'CustomPool111',
+    });
+    expect(resolveBisonFiAccount('pyth-price', { pubkey: 'PythAccount' }, 'CustomPool111')).toEqual({
+      pubkey: 'PythAccount',
+    });
+    expect(resolveBisonFiAccount('bisonfi-depth', { pubkey: '' }, '   ')).toBeUndefined();
   });
 });

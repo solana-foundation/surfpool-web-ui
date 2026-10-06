@@ -23,12 +23,17 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
-import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { resolveTokenSelectorOptions } from './token-selector-options';
+import { decodeRawLayoutAccountData, getFieldsFromRawLayout } from './raw-layout-fields';
+import {
+  BISONFI_MARKET_OPTIONS,
+  isBisonFiTemplate,
+  resolveBisonFiAccount,
+  resolveTokenSelectorOptions,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -106,6 +111,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'BisonFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -143,6 +149,8 @@ export default function ScenarioEditor({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
+  const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
+  const [usesCustomBisonFiAddress, setUsesCustomBisonFiAddress] = useState(false);
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -161,6 +169,11 @@ export default function ScenarioEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
   const isFirstSlotsChangeRef = useRef(true);
+  const accountLoadRequestRef = useRef(0);
+  const accountDataBisonFiAddressRef = useRef('');
+  const pendingBisonFiAddressRef = useRef('');
+  const isBisonFiAccountSelection = isBisonFiTemplate(selectedAction?.id);
+  const isAddressSelectionMissing = isBisonFiAccountSelection && selectedAccountPubkey.trim() === '';
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -603,46 +616,21 @@ export default function ScenarioEditor({
     return result;
   };
 
-  // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action) => {
-    setSelectedAction(action);
-    setAccountData({});
-    setModifiedFields(new Set()); // Clear modified fields when loading new action
-    setArrayEntryIndex({});
-    setFetchBeforeUse(false); // Reset fetch before use toggle
-
-    if (!action.template?.idl || !action.template?.address) {
-      console.warn('Action template missing IDL or address');
-      return;
-    }
-
+  const loadAccountData = async (address: string, template: any, requestId: number) => {
     setLoadingAccountData(true);
 
     try {
-      // Step 1: Register the IDL using slot 1
-      logger.log('📝 Registering IDL for', action.template.address);
-
-      // Extract address string
-      let addressString;
-      if (typeof action.template.address === 'string') {
-        addressString = action.template.address;
-      } else if (action.template.address && typeof action.template.address === 'object') {
-        addressString =
-          action.template.address.pubkey || action.template.address.address || action.template.address.value;
-      }
-
-      // Step 1: Fetch account info with parsed JSON
-      logger.log('🔍 Fetching account info for address:', addressString);
+      logger.log('🔍 Fetching account info for address:', address);
 
       const getAccountInfoRequest = {
         jsonrpc: '2.0',
         id: 2,
         method: 'getAccountInfo',
         params: [
-          addressString,
+          address,
           {
             commitment: 'confirmed',
-            encoding: 'jsonParsed',
+            encoding: template?.rawLayout ? 'base64' : 'jsonParsed',
           },
         ],
       };
@@ -658,17 +646,102 @@ export default function ScenarioEditor({
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
 
-      if (accountInfoData.result?.value?.data?.parsed) {
-        // Populate accountData with the parsed data
-        const parsed = accountInfoData.result.value.data.parsed;
+      if (requestId !== accountLoadRequestRef.current) return false;
+
+      const responseData = accountInfoData.result?.value?.data;
+      if (responseData?.parsed) {
+        const parsed = responseData.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
+        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
+      } else if (template?.rawLayout && Array.isArray(responseData) && typeof responseData[0] === 'string') {
+        const binary = atob(responseData[0]);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const decoded = decodeRawLayoutAccountData(template, bytes);
+        logger.log('📊 Decoded raw-layout account data:', decoded);
+        setAccountData(decoded);
+        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
       }
 
-      setLoadingAccountData(false);
+      return true;
     } catch (error) {
-      console.error('Error loading account data:', error);
-      setLoadingAccountData(false);
+      if (requestId === accountLoadRequestRef.current) {
+        console.error('Error loading account data:', error);
+      }
+      return requestId === accountLoadRequestRef.current;
+    } finally {
+      if (requestId === accountLoadRequestRef.current) {
+        if (pendingBisonFiAddressRef.current === address) pendingBisonFiAddressRef.current = '';
+        setLoadingAccountData(false);
+      }
+    }
+  };
+
+  // Register IDL and fetch account data when an action is selected
+  const handleActionSelect = async (action: Action, savedAccount?: any) => {
+    const requestId = ++accountLoadRequestRef.current;
+    setLoadingAccountData(false);
+    setSelectedAction(action);
+    setAccountData({});
+    const usesBisonFiMarket = isBisonFiTemplate(action.id);
+    const savedPubkey = typeof savedAccount?.pubkey === 'string' ? savedAccount.pubkey : '';
+    const selectedPubkey = usesBisonFiMarket ? savedPubkey : '';
+    accountDataBisonFiAddressRef.current = '';
+    pendingBisonFiAddressRef.current = '';
+    setSelectedAccountPubkey(selectedPubkey);
+    setUsesCustomBisonFiAddress(
+      usesBisonFiMarket &&
+        savedPubkey !== '' &&
+        !BISONFI_MARKET_OPTIONS.some((option) => String(option.value) === savedPubkey)
+    );
+    setModifiedFields(new Set()); // Clear modified fields when loading new action
+    setArrayEntryIndex({});
+    setFetchBeforeUse(false); // Reset fetch before use toggle
+
+    if (!action.template?.address) {
+      console.warn('Action template missing address');
+      return requestId === accountLoadRequestRef.current;
+    }
+
+    // Extract address string
+    let addressString;
+    if (usesBisonFiMarket) {
+      addressString = selectedPubkey;
+    } else if (typeof action.template.address === 'string') {
+      addressString = action.template.address;
+    } else if (action.template.address && typeof action.template.address === 'object') {
+      addressString =
+        action.template.address.pubkey || action.template.address.address || action.template.address.value;
+    }
+
+    if (!addressString) return requestId === accountLoadRequestRef.current;
+
+    if (usesBisonFiMarket) pendingBisonFiAddressRef.current = addressString;
+
+    return loadAccountData(addressString, action.template, requestId);
+  };
+
+  const changeBisonFiAccount = (pubkey: string, custom: boolean, fetchAccount: boolean) => {
+    if (
+      fetchAccount &&
+      (pubkey === accountDataBisonFiAddressRef.current || pubkey === pendingBisonFiAddressRef.current)
+    )
+      return;
+
+    const requestId = ++accountLoadRequestRef.current;
+    setSelectedAccountPubkey(pubkey);
+    setUsesCustomBisonFiAddress(custom);
+    // Values entered for one pool must never be carried silently to another pool.
+    setAccountData({});
+    accountDataBisonFiAddressRef.current = '';
+    setModifiedFields(new Set());
+    setLoadingAccountData(false);
+
+    if (fetchAccount && pubkey) {
+      pendingBisonFiAddressRef.current = pubkey;
+      void loadAccountData(pubkey, selectedAction?.template, requestId);
+    } else {
+      pendingBisonFiAddressRef.current = '';
     }
   };
 
@@ -751,7 +824,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: resolveBisonFiAccount(action.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -791,7 +864,7 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    account: action.template?.address,
+                    account: resolveBisonFiAccount(action.id, action.template?.address, selectedAccountPubkey),
                   }
                 : existingAction
             ),
@@ -1261,7 +1334,11 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    await handleActionSelect(foundAction);
+                                                    const selectionIsCurrent = await handleActionSelect(
+                                                      foundAction,
+                                                      action.account
+                                                    );
+                                                    if (!selectionIsCurrent) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1477,6 +1554,12 @@ export default function ScenarioEditor({
                                                     }
 
                                                     setAccountData(restoredData);
+                                                    if (
+                                                      isBisonFiTemplate(foundAction.id) &&
+                                                      typeof action.account?.pubkey === 'string'
+                                                    ) {
+                                                      accountDataBisonFiAddressRef.current = action.account.pubkey;
+                                                    }
 
                                                     // Combine action.modifiedFields with any restored constant_ref fields
                                                     const allModifiedFields = new Set(action.modifiedFields || []);
@@ -1828,6 +1911,77 @@ export default function ScenarioEditor({
                                     updates, and dynamic balances.
                                   </p>
                                 </div>
+                                {isBisonFiAccountSelection &&
+                                  (() => {
+                                    const selectedMarket = BISONFI_MARKET_OPTIONS.find(
+                                      (option) => String(option.value) === selectedAccountPubkey
+                                    );
+                                    const customMarketOption = {
+                                      id: 'custom-bisonfi-market',
+                                      label: 'Custom market address',
+                                      value: '__custom__',
+                                      description: 'Enter a BisonFi v3 pool address',
+                                    };
+                                    const marketOptions = [customMarketOption, ...BISONFI_MARKET_OPTIONS];
+
+                                    return (
+                                      <div className="mb-6 space-y-3 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
+                                        <div>
+                                          <label className="block text-sm font-medium text-zinc-300">Market</label>
+                                          <p className="mt-1 text-xs text-zinc-500">
+                                            Choose a commonly used BisonFi market or enter another v3 pool address.
+                                          </p>
+                                        </div>
+                                        <Combobox
+                                          aria-label="BisonFi market"
+                                          value={
+                                            usesCustomBisonFiAddress ? customMarketOption : (selectedMarket ?? null)
+                                          }
+                                          onChange={(option: any) => {
+                                            if (option) {
+                                              const custom = option.value === '__custom__';
+                                              changeBisonFiAccount(custom ? '' : String(option.value), custom, !custom);
+                                            }
+                                          }}
+                                          options={marketOptions}
+                                          displayValue={(option: any) => option?.label || ''}
+                                          filter={(option: any, query: string) =>
+                                            [option.label, option.description, option.value]
+                                              .filter(Boolean)
+                                              .join(' ')
+                                              .toLowerCase()
+                                              .includes(query.toLowerCase())
+                                          }
+                                          placeholder="Search markets..."
+                                        >
+                                          {(option: any) => (
+                                            <ComboboxOption key={option.id} value={option}>
+                                              <ComboboxLabel>
+                                                <span className="font-medium">{option.label}</span>
+                                                {option.description && (
+                                                  <span className="ml-2 text-zinc-400">{option.description}</span>
+                                                )}
+                                              </ComboboxLabel>
+                                            </ComboboxOption>
+                                          )}
+                                        </Combobox>
+                                        {usesCustomBisonFiAddress && (
+                                          <Input
+                                            aria-label="Custom BisonFi market address"
+                                            value={selectedAccountPubkey}
+                                            onChange={(event) =>
+                                              changeBisonFiAccount(event.target.value.trim(), true, false)
+                                            }
+                                            onBlur={() => {
+                                              const address = selectedAccountPubkey.trim();
+                                              if (address) changeBisonFiAccount(address, true, true);
+                                            }}
+                                            placeholder="Enter a BisonFi v3 pool address..."
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
                                     <div className="flex flex-col items-center gap-3">
@@ -2556,12 +2710,14 @@ export default function ScenarioEditor({
                                           setSelectedProduct(null);
                                           setSelectedAction(null);
                                           setAccountData({});
+                                          setSelectedAccountPubkey('');
+                                          setUsesCustomBisonFiAddress(false);
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={!selectedSlotId || !selectedAction || isAddressSelectionMissing}
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
