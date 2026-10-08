@@ -8,6 +8,7 @@ export function Combobox<T>({
   options,
   displayValue,
   filter,
+  customOption,
   anchor = 'bottom',
   className,
   placeholder,
@@ -19,6 +20,8 @@ export function Combobox<T>({
   options: T[]
   displayValue: (value: T | null) => string | undefined
   filter?: (value: T, query: string) => boolean
+  // Offers the typed text as a last option, for values the list does not have; null offers nothing.
+  customOption?: (query: string) => T | null
   className?: string
   placeholder?: string
   autoFocus?: boolean
@@ -33,9 +36,11 @@ export function Combobox<T>({
       : options.filter((option) =>
           filter ? filter(option, query) : displayValue(option)?.toLowerCase().includes(query.toLowerCase())
         )
+  const typedOption = customOption && query.trim() !== '' ? customOption(query.trim()) : null
+  const visibleOptions = typedOption === null ? filteredOptions : [...filteredOptions, typedOption]
 
   return (
-    <Headless.Combobox {...props} multiple={false} virtual={{ options: filteredOptions }} onClose={() => setQuery('')}>
+    <Headless.Combobox {...props} multiple={false} virtual={{ options: visibleOptions }} onClose={() => setQuery('')}>
       <span
         data-slot="control"
         className={clsx([
@@ -102,7 +107,7 @@ export function Combobox<T>({
           // Anchor positioning
           '[--anchor-gap:--spacing(2)] [--anchor-padding:--spacing(4)] sm:data-[anchor~=start]:[--anchor-offset:-4px]',
           // Base styles,
-          'isolate min-w-[calc(var(--input-width)+8px)] scroll-py-1 rounded-xl p-1 select-none empty:invisible',
+          'isolate z-50 min-w-[calc(var(--input-width)+8px)] scroll-py-1 rounded-xl p-1 select-none empty:invisible',
           // Invisible border that is only visible in `forced-colors` mode for accessibility purposes
           'outline outline-transparent focus:outline-hidden',
           // Handle scrolling when menu won't fit in viewport

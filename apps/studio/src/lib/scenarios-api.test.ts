@@ -3,10 +3,14 @@ import { LosslessNumber } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
+  createPhoenixCollateralScenario,
+  createPhoenixDirectMarkScenario,
+  createPhoenixMaintenanceMarginScenario,
   buildUpdatePayload,
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
+  fetchDynamicRefOptions,
   flattenOverrideValues,
   parseScenariosJson,
   scenarioDownloadFile,
@@ -164,6 +168,134 @@ describe('createPumpSwapPriceShockScenario', () => {
 
     await expect(createPumpSwapPriceShockScenario('http://studio', 'mint', '1')).rejects.toThrow('Scenario store unavailable');
   });
+});
+
+vi.mock('./ai-client', () => ({
+  fetchMCPTools: vi.fn(async () => ({ tools: [], sessionId: 'session' })),
+  callMCPTool: vi.fn(),
+}));
+
+describe('createPhoenixCollateralScenario', () => {
+  it('creates the scenario through the Phoenix MCP tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ url: 'http://studio/scenarios?id=phoenix-1&tab=editor' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', ' trader ', ' -5 ')).resolves.toEqual({
+      id: 'phoenix-1',
+    });
+    expect(callMCPTool).toHaveBeenCalledWith(
+      'http://studio',
+      'create_phoenix_collateral_scenario',
+      { trader: 'trader', targetQuoteLots: '-5' },
+      'session'
+    );
+  });
+
+  it('surfaces tool validation failures', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: 'Phoenix Trader account trader was not found' }),
+        },
+      ],
+    });
+
+    await expect(createPhoenixCollateralScenario('http://studio', 'trader', '5')).rejects.toThrow(
+      'Phoenix Trader account trader was not found'
+    );
+  });
+});
+
+describe('Phoenix market scenarios', () => {
+  const templates = (id: string) => jsonResponse([{ id, address: { pubkey: 'perp-asset-map' } }]);
+
+  it.each([
+    [createPhoenixDirectMarkScenario, 'phoenix-direct-mark-risk-shock', 'target_ticks'],
+    [createPhoenixMaintenanceMarginScenario, 'phoenix-maintenance-margin-stress', 'maintenance_risk_factor_bps'],
+  ] as const)(
+    '%#: posts the template with its map address, string values and fetchBeforeUse',
+    async (create, templateId, field) => {
+      vi.stubGlobal('fetch', fetchMock);
+      fetchMock
+        .mockResolvedValueOnce(templates(templateId))
+        .mockResolvedValueOnce(jsonResponse({ id: 'phoenix-market' }));
+
+      await expect(create('http://studio', ' SOL ', ' 6000 ')).resolves.toEqual({ id: 'phoenix-market' });
+      expect(fetchMock.mock.calls[1][0]).toBe('http://studio/v1/scenarios');
+      const override = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).overrides[0];
+      expect(override).toMatchObject({
+        templateId,
+        values: { symbol: 'SOL', [field]: '6000' },
+        fetchBeforeUse: true,
+        account: { pubkey: 'perp-asset-map' },
+      });
+    }
+  );
+
+  it('surfaces failed requests', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(templates('phoenix-maintenance-margin-stress'))
+      .mockResolvedValueOnce(new Response('Scenario store unavailable', { status: 503 }));
+
+    await expect(createPhoenixMaintenanceMarginScenario('http://studio', 'SOL', '6000')).rejects.toThrow(
+      'Scenario store unavailable'
+    );
+  });
+});
+
+describe('fetchDynamicRefOptions', () => {
+  it('returns each live market with its orderbook address and unit inputs from the list_phoenix_markets tool', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            perpAssetMap: 'map1',
+            count: 2,
+            symbols: ['BTC', 'SOL'],
+            markets: [
+              { symbol: 'BTC', orderbook: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+              { symbol: 'SOL', orderbook: 'solBook', markTicks: 11755 },
+            ],
+          }),
+        },
+      ],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
+      { value: 'BTC', address: 'btcBook', markTicks: 83391, tickSize: 100, baseLotDecimals: 4 },
+      { value: 'SOL', address: 'solBook', markTicks: 11755 },
+    ]);
+    expect(callMCPTool).toHaveBeenCalledWith('http://studio', 'list_phoenix_markets', {}, 'session');
+  });
+
+  it('falls back to bare symbols from a tool that lists no markets', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ symbols: ['SOL', 'BTC'] }) }],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([
+      { value: 'SOL' },
+      { value: 'BTC' },
+    ]);
+  });
+
+  it('falls back to [] when the tool reports an error', async () => {
+    vi.mocked(callMCPTool).mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ error: 'no surfnet on that port' }) }],
+    });
+
+    await expect(fetchDynamicRefOptions('http://studio', 'list_phoenix_markets')).resolves.toEqual([]);
+  });
+
 });
 
 describe('createScenarioPayload', () => {

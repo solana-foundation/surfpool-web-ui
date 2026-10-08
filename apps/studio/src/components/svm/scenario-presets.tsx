@@ -5,9 +5,14 @@ import Image from 'next/image';
 interface ScenarioPresetsProps {
   onPumpGraduationSelect: () => void;
   onPumpSwapPriceShockSelect: () => void;
+  onPhoenixStateSelect: () => void;
 }
 
-export default function ScenarioPresets({ onPumpGraduationSelect, onPumpSwapPriceShockSelect }: ScenarioPresetsProps) {
+export default function ScenarioPresets({
+  onPumpGraduationSelect,
+  onPumpSwapPriceShockSelect,
+  onPhoenixStateSelect,
+}: ScenarioPresetsProps) {
   return (
     <section aria-labelledby="scenario-presets-heading" className="mx-auto mb-8 max-w-7xl px-6 lg:px-8">
       <div className="mx-auto mb-3 max-w-4xl">
@@ -50,6 +55,22 @@ export default function ScenarioPresets({ onPumpGraduationSelect, onPumpSwapPric
             </span>
           </span>
           <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-violet-400" />
+        </button>
+        <button
+          type="button"
+          onClick={onPhoenixStateSelect}
+          className="group flex items-center gap-4 rounded-2xl border border-zinc-700/50 bg-zinc-900/60 p-4 text-left shadow-lg shadow-black/10 transition-colors hover:border-cyan-500/40 hover:bg-zinc-900"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-800 ring-1 ring-zinc-700/70">
+            <Image src={getProtocolIcon('phoenix-eternal')} alt="" width={28} height={28} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-zinc-100">Phoenix state</span>
+            <span className="mt-1 block text-sm leading-5 text-zinc-500">
+              Prepare liquidation risk, a direct mark shock or stricter margin.
+            </span>
+          </span>
+          <ArrowRightIcon className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan-400" />
         </button>
       </div>
     </section>

@@ -138,7 +138,7 @@ export async function createPumpGraduationScenario(
   studioUrl: string,
   tokenMint: string
 ): Promise<PumpGraduationScenarioResult> {
-  return createPumpScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
+  return createScenarioWithMcp(studioUrl, 'create_pump_graduation_scenario', {
     tokenMint: tokenMint.trim(),
   });
 }
@@ -218,11 +218,11 @@ export async function createPumpSwapPriceShockScenario(
   return { id: result.id };
 }
 
-async function createPumpScenarioWithMcp(
+async function callMcpToolJson<T>(
   studioUrl: string,
   toolName: string,
   args: Record<string, string>
-): Promise<PumpGraduationScenarioResult> {
+): Promise<T | undefined> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
     content?: Array<{ type?: string; text?: string }>;
@@ -234,15 +234,167 @@ async function createPumpScenarioWithMcp(
       break;
     }
   }
-  if (!text) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
+  return text ? (JSON.parse(text) as T) : undefined;
+}
 
-  const payload = JSON.parse(text) as { error?: string | null; url?: string | null };
+async function createScenarioWithMcp(
+  studioUrl: string,
+  toolName: string,
+  args: Record<string, string>
+): Promise<{ id: string }> {
+  const payload = await callMcpToolJson<{ error?: string | null; url?: string | null }>(studioUrl, toolName, args);
+  if (!payload) throw new Error(`Surfpool MCP tool ${toolName} returned no result`);
   if (payload.error) throw new Error(payload.error);
   if (!payload.url) throw new Error(`Surfpool MCP tool ${toolName} returned no scenario URL`);
 
   const scenarioId = new URL(payload.url).searchParams.get('id');
   if (!scenarioId) throw new Error(`Surfpool MCP tool ${toolName} returned an invalid scenario URL`);
   return { id: scenarioId };
+}
+
+export type PhoenixScenarioResult = {
+  id: string;
+};
+
+export async function createPhoenixCollateralScenario(
+  studioUrl: string,
+  trader: string,
+  targetQuoteLots: string
+): Promise<PhoenixScenarioResult> {
+  return createScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
+    trader: trader.trim(),
+    targetQuoteLots: targetQuoteLots.trim(),
+  });
+}
+
+async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
+  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load scenario templates: ${response.status}`);
+  }
+
+  const templates = (await response.json()) as ScenarioTemplate[];
+  const template = findScenarioTemplate(templates, templateId);
+  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+
+  return template;
+}
+
+export interface DynamicRefOption {
+  value: string;
+  address?: string;
+  markTicks?: number;
+  tickSize?: number;
+  baseLotDecimals?: number;
+}
+
+interface DynamicRefPayload {
+  error?: string | null;
+  symbols?: string[];
+  markets?: ({ symbol: string; orderbook?: string } & Omit<DynamicRefOption, 'value' | 'address'>)[];
+}
+
+/** Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. */
+export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<DynamicRefOption[]> {
+  try {
+    const payload = await callMcpToolJson<DynamicRefPayload>(studioUrl, source, {});
+    if (!payload || payload.error) return [];
+    if (payload.markets) {
+      return payload.markets.map(({ symbol, orderbook, ...market }) => ({
+        value: symbol,
+        address: orderbook,
+        ...market,
+      }));
+    }
+    return (payload.symbols ?? []).map((value) => ({ value }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The market templates carry the perp asset map address, so these scenarios are built here and
+ * posted to the generic API; only collateral stress needs a tool, which reads the Trader from the surfnet.
+ */
+async function createPhoenixMarketScenario(
+  studioUrl: string,
+  templateId: string,
+  name: string,
+  description: string,
+  label: string,
+  tags: string[],
+  values: Record<string, string>
+): Promise<PhoenixScenarioResult> {
+  const template = await phoenixMarketTemplate(studioUrl, templateId);
+  const scenario = {
+    id: crypto.randomUUID(),
+    name,
+    description,
+    overrides: [
+      {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        values,
+        scenarioRelativeSlot: 0,
+        label,
+        enabled: true,
+        // A stale map fails Phoenix's mark staleness check, so fetch the current one from the
+        // upstream datasource first.
+        fetchBeforeUse: true,
+        account: template.address,
+      },
+    ],
+    tags,
+  };
+  const body = stringify(scenario);
+  if (!body) throw new Error('Failed to serialize Phoenix scenario');
+
+  const response = await fetch(`${studioUrl}/v1/scenarios`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Failed to create Phoenix scenario: ${response.status}`);
+  }
+
+  const result = (await response.json()) as { id?: string };
+  if (!result.id) throw new Error('Surfpool returned no scenario id');
+
+  return { id: result.id };
+}
+
+export async function createPhoenixDirectMarkScenario(
+  studioUrl: string,
+  symbol: string,
+  targetTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixMarketScenario(
+    studioUrl,
+    'phoenix-direct-mark-risk-shock',
+    `Phoenix ${symbol.trim()} Direct Mark Risk Shock`,
+    'Set exact mark-price ticks for one market in the Phoenix Eternal PerpAssetMap.',
+    `Phoenix ${symbol.trim()} direct mark risk shock`,
+    ['phoenix-eternal', 'direct-mark', 'risk'],
+    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+  );
+}
+
+export async function createPhoenixMaintenanceMarginScenario(
+  studioUrl: string,
+  symbol: string,
+  riskFactor: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixMarketScenario(
+    studioUrl,
+    'phoenix-maintenance-margin-stress',
+    `Phoenix ${symbol.trim()} Maintenance Margin Stress`,
+    'Set the maintenance margin risk factor for one Phoenix Eternal market.',
+    `Phoenix ${symbol.trim()} maintenance margin stress`,
+    ['phoenix-eternal', 'maintenance-margin', 'risk'],
+    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
+  );
 }
 
 /**

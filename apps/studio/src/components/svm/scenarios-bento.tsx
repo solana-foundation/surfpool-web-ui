@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
+import PhoenixStateDialog from './phoenix-state-dialog';
 import PumpGraduationDialog from './pump-graduation-dialog';
 import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
 import ScenarioCard from './scenario-card';
@@ -61,6 +62,7 @@ export default function ScenariosBento({
   const [scenarioToDelete, setScenarioToDelete] = useState<{ id: string; onClose?: () => void } | null>(null);
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
+  const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -187,6 +189,20 @@ export default function ScenariosBento({
 
   const handlePumpSwapPriceShockCreated = (scenarioId: string) => {
     setPumpSwapPriceShockDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenPhoenixStateDialog = () => {
+    setPhoenixStateDialogOpen(true);
+  };
+
+  const handleClosePhoenixStateDialog = () => {
+    setPhoenixStateDialogOpen(false);
+  };
+
+  const handlePhoenixStateCreated = (scenarioId: string) => {
+    setPhoenixStateDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -333,6 +349,7 @@ export default function ScenariosBento({
           <ScenarioPresets
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
+            onPhoenixStateSelect={handleOpenPhoenixStateDialog}
           />
         </>
       )}
@@ -436,6 +453,12 @@ export default function ScenariosBento({
         studioUrl={studioUrl}
         onClose={handleClosePumpSwapPriceShockDialog}
         onCreated={handlePumpSwapPriceShockCreated}
+      />
+      <PhoenixStateDialog
+        open={phoenixStateDialogOpen}
+        studioUrl={studioUrl}
+        onClose={handleClosePhoenixStateDialog}
+        onCreated={handlePhoenixStateCreated}
       />
     </div>
   );

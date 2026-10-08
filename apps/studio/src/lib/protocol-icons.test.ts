@@ -23,6 +23,7 @@ describe('PROTOCOL_ICONS', () => {
   it('maps protocol IDs to icon paths', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
+    expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
   });
 
   it('has the same number of entries as PROTOCOLS', () => {
@@ -33,6 +34,7 @@ describe('PROTOCOL_ICONS', () => {
 describe('getProtocolIcon', () => {
   it('returns icon for known protocol', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
+    expect(getProtocolIcon('phoenix-eternal')).toBe('/assets/phoenix.svg');
   });
 
   it('returns default fallback for unknown protocol', () => {
