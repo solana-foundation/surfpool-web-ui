@@ -14,7 +14,7 @@ import {
   type OllamaStatus,
 } from '@/lib/ai-client';
 import { PROTOCOLS } from '@/lib/protocol-icons';
-import { buildAiPrompt } from '@/lib/scenarios-api';
+import { buildAiPrompt, createdScenarioIdFromToolResult } from '@/lib/scenarios-api';
 import * as Headless from '@headlessui/react';
 import {
   ArrowRightIcon,
@@ -248,9 +248,11 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
               const resultLine = `  Result: ${JSON.stringify(event.content.result, null, 2)}\n`;
               accumulatedResponse += resultLine;
               setStreamedResponse((prev) => prev + resultLine);
-              const result = event.content.result;
-              if (result?.scenarioId || result?.scenario_id || result?.id) {
-                const scenarioId = result.scenarioId || result.scenario_id || result.id;
+              const scenarioId =
+                event.content.name === 'create_scenario'
+                  ? createdScenarioIdFromToolResult(event.content.result)
+                  : null;
+              if (scenarioId) {
                 onRefresh?.();
                 setTimeout(() => {
                   onScenarioNavigate?.(scenarioId);
