@@ -27,9 +27,10 @@ interface ExplorerHeaderProps {
 }
 
 const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) => {
-  const { rpcUrl, wsUrl, rpcDatasourceUrl, loading: configLoading, error: configError, refetch } = useAppConfig();
+  const { rpcUrl, wsUrl, rpcDatasourceUrl, historical, loading: configLoading, error: configError, refetch } = useAppConfig();
   const [wsConnected, setWsConnected] = useState<boolean>(false);
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
+  // A historical surfnet starts with its clock frozen at the boundary slot.
+  const [isClockPaused, setIsClockPaused] = useState<boolean>(historical);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [transferLocalState, setTransferLocalState] = useState(true);
@@ -528,6 +529,19 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
     }
   };
 
+  const sourceEndpoint = rpcDatasourceUrl === null ? (
+    <div className="flex h-[38px] items-center gap-2 rounded-b-md border border-zinc-700 bg-zinc-800 px-2 font-mono text-xs">
+      <span className="text-zinc-300">SOURCE</span>
+      <span>Historical state</span>
+    </div>
+  ) : (
+    <LabeledLink
+      endpoint={{ name: 'SOURCE', url: rpcDatasourceUrl }}
+      status={configError ? 'error' : configLoading ? 'loading' : 'connected'}
+      className="rounded-b-md"
+    />
+  );
+
   return (
     <div className="mt-8 grid w-full grid-cols-1 gap-8 px-6 lg:grid-cols-[1fr_450px] lg:px-4">
       {/* Left Column on lg / Full width on sm+md */}
@@ -613,11 +627,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                 />
               </div>
               <div className="w-full">
-                <LabeledLink
-                  endpoint={{ name: 'SOURCE', url: rpcDatasourceUrl }}
-                  status={configError ? 'error' : configLoading ? 'loading' : 'connected'}
-                  className="rounded-b-md"
-                />
+                {sourceEndpoint}
               </div>
             </div>
           </div>
@@ -693,11 +703,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             />
           </div>
           <div className="w-full">
-            <LabeledLink
-              endpoint={{ name: 'SOURCE', url: rpcDatasourceUrl }}
-              status={configError ? 'error' : configLoading ? 'loading' : 'connected'}
-              className="rounded-b-md"
-            />
+            {sourceEndpoint}
           </div>
         </div>
       </div>

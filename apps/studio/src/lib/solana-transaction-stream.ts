@@ -54,6 +54,9 @@ export interface TransactionInspectorOptions {
   filterByProgram?: string; // Program ID to filter transactions
   filterByAccount?: string; // Account to filter transactions
   fetchHistorical?: boolean; // Whether to fetch historical/local signatures (default: true)
+  // A historical surfnet: a reset or restart removes its local transactions, so the list is
+  // reconciled with the surfnet's own local signatures on every slot change and reconnect.
+  reconcile?: boolean;
 }
 
 export interface TransactionInspectorStats {
@@ -80,7 +83,8 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     autoStart = true,
     filterByProgram,
     filterByAccount,
-    fetchHistorical = true
+    fetchHistorical = true,
+    reconcile = false
   } = options;
 
   // Validate that required URLs are provided
@@ -100,12 +104,27 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   });
   
   const subscriptionIdRef = useRef<string | null>(null);
-  const processedSignaturesRef = useRef<Set<string>>(new Set());
+  const processedSignaturesRef = useRef<Map<string, number>>(new Map());
+  const transactionsRef = useRef<TransactionInfo[]>([]);
+  const transactionReadsRef = useRef<Map<string, number>>(new Map());
+  const readRef = useRef(0);
+  const generationRef = useRef(0);
+  const reconcileReadRef = useRef(0);
+  const localSnapshotRef = useRef<{ read: number; signatures: Set<string> } | null>(null);
   const mountedRef = useRef(true);
   const streamingRequestedRef = useRef(autoStart);
   const streamOperationRef = useRef(0);
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
 
-  const fetchTransactionDetails = useCallback(async (signature: string) => {
+  const currentRead = useCallback((signature: string, read: number, generation: number) => {
+    const snapshot = localSnapshotRef.current;
+    return mountedRef.current && generation === generationRef.current &&
+      (!reconcile || !snapshot || read > snapshot.read || snapshot.signatures.has(signature));
+  }, [reconcile]);
+
+  const fetchTransactionDetails = useCallback(async (signature: string, read: number, generation: number) => {
     try {
       logger.log('🌐 Fetching transaction details from:', rpcUrl);
       logger.log('📋 Signature:', signature);
@@ -140,6 +159,11 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       const data = await response.json();
       logger.log('📥 Transaction fetch response:', data);
 
+      if (!currentRead(signature, read, generation)) {
+        logger.log('Dropping a stale transaction read:', { signature, read, generation });
+        return false;
+      }
+
       if (data.result) {
         const txInfo: TransactionInfo = data.result;
         logger.log('✅ Transaction details received:', {
@@ -158,16 +182,19 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           );
           if (!hasProgram) {
             logger.log('🚫 Transaction filtered out (program mismatch)');
-            return;
+            return false;
           }
         }
 
         logger.log('📊 Adding transaction to state...');
-        setTransactions(prev => {
-          const newTransactions = [txInfo, ...prev].slice(0, maxTransactions);
-          logger.log('📈 Transaction added! Total transactions now:', newTransactions.length);
-          return newTransactions;
-        });
+        const newTransactions = [txInfo, ...transactionsRef.current].slice(0, maxTransactions);
+        transactionReadsRef.current.set(signature, read);
+        const kept = new Set(newTransactions.map(tx => tx.transaction.signatures[0]));
+        for (const key of transactionReadsRef.current.keys()) {
+          if (!kept.has(key)) transactionReadsRef.current.delete(key);
+        }
+        transactionsRef.current = newTransactions;
+        setTransactions(newTransactions);
 
         setStats(prev => {
           const newStats = {
@@ -180,15 +207,20 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           logger.log('📊 Stats updated:', newStats);
           return newStats;
         });
+        return true;
       } else {
         logger.log('❌ No transaction result in response');
       }
     } catch (err) {
       console.error('Error fetching transaction details:', err);
     }
-  }, [rpcUrl, filterByProgram, maxTransactions]);
+    return false;
+  }, [rpcUrl, filterByProgram, maxTransactions, currentRead]);
 
-  const processTransactionSignature = useCallback(async (signature: string, err?: any) => {
+  const processTransactionSignature = useCallback(async (
+    signature: string, err?: any, read = ++readRef.current, generation = generationRef.current
+  ) => {
+    if (!currentRead(signature, read, generation)) return;
     // Check if we've already processed this signature
     if (processedSignaturesRef.current.has(signature)) {
       logger.log('🔄 Signature already processed, skipping:', signature);
@@ -196,11 +228,14 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     }
 
     // Mark signature as processed
-    processedSignaturesRef.current.add(signature);
+    processedSignaturesRef.current.set(signature, read);
     // Fetch full transaction details
     logger.log('🔄 Fetching transaction details for signature:', signature);
-    await fetchTransactionDetails(signature);
-  }, [fetchTransactionDetails]);
+    const accepted = await fetchTransactionDetails(signature, read, generation);
+    if (!accepted && processedSignaturesRef.current.get(signature) === read) {
+      processedSignaturesRef.current.delete(signature);
+    }
+  }, [fetchTransactionDetails, currentRead]);
 
   const subscribeToStream = useCallback(async (operation: number) => {
     const current = () => mountedRef.current && streamingRequestedRef.current &&
@@ -213,8 +248,16 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       return false;
     }
     subscriptionIdRef.current = subscription;
+    if (reconcile) {
+      const slots = await solanaWebSocketService.subscribeToSlots();
+      if (!current()) {
+        solanaWebSocketService.unsubscribe(slots, 'slot');
+        solanaWebSocketService.unsubscribe(subscription, 'transaction');
+        return false;
+      }
+    }
     return true;
-  }, [filterByAccount, filterByProgram]);
+  }, [filterByAccount, filterByProgram, reconcile]);
 
   const startStreaming = useCallback(async () => {
     streamingRequestedRef.current = true;
@@ -252,7 +295,6 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
       await solanaWebSocketService.connect(convertedWsUrl);
       logger.log('🔗 WebSocket connected successfully');
-
       if (!mountedRef.current || !streamingRequestedRef.current || operation !== streamOperationRef.current) return;
       if (!await subscribeToStream(operation)) return;
 
@@ -292,6 +334,8 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   }, [isStreaming, startStreaming, stopStreaming]);
 
   const fetchLocalSignatures = useCallback(async () => {
+    const read = ++readRef.current;
+    const generation = generationRef.current;
     try {
       logger.log('🔍 Fetching local signatures from RPC endpoint...');
       
@@ -317,6 +361,8 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
       const data = await response.json();
       logger.log('📥 Local signatures response:', data);
+
+      if (!mountedRef.current || generation !== generationRef.current) return;
       
       if (data.result && data.result.value && Array.isArray(data.result.value)) {
         logger.log('✅ Local signatures received:', data.result.value.length, 'signatures');
@@ -326,7 +372,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         for (let i = data.result.value.length - 1; i >= 0; i--) {
           const signatureData = data.result.value[i];
           const signature = signatureData.signature;
-          await processTransactionSignature(signature, signatureData.err);
+          await processTransactionSignature(signature, signatureData.err, read, generation);
         }
       } else {
         logger.log('❌ No local signatures found or invalid response');
@@ -337,6 +383,11 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   }, [rpcUrl, processTransactionSignature]);
 
   const clearTransactions = useCallback(() => {
+    generationRef.current++;
+    reconcileReadRef.current = ++readRef.current;
+    localSnapshotRef.current = null;
+    transactionReadsRef.current.clear();
+    transactionsRef.current = [];
     setTransactions([]);
     processedSignaturesRef.current.clear();
     setStats(prev => ({
@@ -350,22 +401,75 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
   useEffect(() => {
     mountedRef.current = true;
+    if (reconcile) clearTransactions();
     return () => {
       mountedRef.current = false;
+      generationRef.current++;
+      reconcileReadRef.current = ++readRef.current;
       streamOperationRef.current++;
     };
-  }, [rpcUrl, wsUrl, filterByAccount, filterByProgram]);
+  }, [rpcUrl, wsUrl, reconcile, filterByAccount, filterByProgram, clearTransactions]);
+
+  // A local inventory bounds reads begun before it; later transaction notifications must
+  // not be erased by an older inventory reply. Only the newest reconciliation can apply.
+  const reconcileWithLocal = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const read = ++readRef.current;
+    reconcileReadRef.current = read;
+    const generation = generationRef.current;
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'surfnet_getLocalSignatures', params: [] })
+      });
+      const data = await response.json();
+      if (!mountedRef.current || generation !== generationRef.current || reconcileReadRef.current !== read) return;
+      if (!Array.isArray(data.result?.value)) {
+        logger.log('Local signature reconciliation returned no inventory:', { rpcUrl, data });
+        return;
+      }
+      const present = new Set<string>(data.result.value.map((entry: any) => entry.signature));
+      localSnapshotRef.current = { read, signatures: present };
+      const remaining = transactionsRef.current.filter((tx) => {
+        const signature = tx.transaction.signatures[0];
+        const loaded = transactionReadsRef.current.get(signature);
+        return present.has(signature) || (loaded !== undefined && loaded > read);
+      });
+      if (remaining.length !== transactionsRef.current.length) {
+        logger.log('🔄 The surfnet no longer lists some transactions, reloading the list');
+        for (const tx of transactionsRef.current) {
+          const signature = tx.transaction.signatures[0];
+          if (!present.has(signature) && !remaining.includes(tx)) {
+            processedSignaturesRef.current.delete(signature);
+            transactionReadsRef.current.delete(signature);
+          }
+        }
+        transactionsRef.current = remaining;
+        setTransactions(remaining);
+        setStats(prev => ({ ...prev, totalReceived: remaining.length,
+          successful: remaining.filter(tx => !tx.meta?.err).length,
+          failed: remaining.filter(tx => tx.meta?.err).length, lastUpdate: new Date() }));
+      }
+    } catch (err) {
+      logger.log('Local signature reconciliation failed:', err);
+    }
+  }, [rpcUrl]);
 
   useEffect(() => {
     let disconnected = false;
+    const handleSlot = () => {
+      if (reconcile && mountedRef.current) reconcileWithLocal();
+    };
     const handleDisconnected = () => {
       disconnected = true;
+      if (reconcile) reconcileReadRef.current = ++readRef.current;
       streamOperationRef.current++;
     };
     const handleReconnected = async () => {
       if (!disconnected) return;
       disconnected = false;
-      // Subscriptions belong to the old server connection, not the new one.
+      // A restarted surfnet knows none of the earlier subscriptions.
       if (streamingRequestedRef.current) {
         const operation = ++streamOperationRef.current;
         try {
@@ -378,14 +482,17 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           }
         }
       }
+      if (reconcile) reconcileWithLocal();
     };
+    solanaWebSocketService.on('slot', handleSlot);
     solanaWebSocketService.on('disconnected', handleDisconnected);
     solanaWebSocketService.on('connected', handleReconnected);
     return () => {
+      solanaWebSocketService.off('slot', handleSlot);
       solanaWebSocketService.off('disconnected', handleDisconnected);
       solanaWebSocketService.off('connected', handleReconnected);
     };
-  }, [subscribeToStream]);
+  }, [reconcile, reconcileWithLocal, subscribeToStream]);
 
   // Listen for transaction events
   useEffect(() => {

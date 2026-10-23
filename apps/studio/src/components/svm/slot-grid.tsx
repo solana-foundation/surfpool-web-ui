@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
 
 export const SlotsGrid: React.FC = () => {
-  const { rpcUrl, wsUrl, loading: configLoading, error: configError } = useAppConfig();
+  const { rpcUrl, wsUrl, historical, loading: configLoading, error: configError } = useAppConfig();
   const [isClient, setIsClient] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,7 +48,8 @@ export const SlotsGrid: React.FC = () => {
   const [currentEpoch, setCurrentEpoch] = useState<number>(0);
   const [currentSlot, setCurrentSlot] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(DEFAULT_SLOTS_IN_EPOCH);
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
+  // A historical surfnet starts with its clock frozen at the boundary slot.
+  const [isClockPaused, setIsClockPaused] = useState<boolean>(historical);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
   const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false);
 

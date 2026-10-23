@@ -4,9 +4,10 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 interface Config {
   rpc_url: string
   ws_url: string
-  rpc_datasource_url: string
+  rpc_datasource_url: string | null
   studio_url: string
   mcp_url?: string
+  historical?: { after: string } | null
 }
 
 interface ConfigContextType {
@@ -34,11 +35,13 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
   const [config, setConfig] = useState<Config | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [invalidMetadata, setInvalidMetadata] = useState(false)
 
   const fetchConfig = async () => {
     try {
       setLoading(true)
       setError(null)
+      setInvalidMetadata(false)
       
       // Try local /config endpoint first
       let response = await fetch('/config')
@@ -53,6 +56,15 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       }
       
       const data: Config = await response.json()
+      const history: unknown = data.historical
+      if (history != null && (
+        typeof history !== 'object' || Array.isArray(history) ||
+        !('after' in history) || typeof history.after !== 'string' ||
+        history.after.trim().length === 0
+      )) {
+        setInvalidMetadata(true)
+        throw new Error('Invalid historical Surfpool configuration; reload after checking the server build')
+      }
       logger.log('📋 Config loaded:', data)
       setConfig(data)
     } catch (err) {
@@ -75,12 +87,18 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     refetch: fetchConfig
   }
 
-  // Consumers connect on mount: settle configuration before choosing endpoints.
+  // Children connect with these URLs on mount: hold them until the first fetch settles, so a
+  // configured port is never preceded by the built-in defaults (which still apply on error).
   const settled = config !== null || error !== null
 
   return (
     <ConfigContext.Provider value={value}>
-      {settled ? children : null}
+      {invalidMetadata ? (
+        <div role="alert">
+          {error}
+          <button onClick={() => void fetchConfig()}>Retry configuration</button>
+        </div>
+      ) : settled ? children : null}
     </ConfigContext.Provider>
   )
 }
