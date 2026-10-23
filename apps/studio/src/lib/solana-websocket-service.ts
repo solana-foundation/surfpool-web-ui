@@ -17,10 +17,12 @@ class SolanaWebSocketService extends EventEmitter {
   private wsUrl: string | null = null;
   private subscriptions = new Map<string, WebSocketSubscription>();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectDelay = 5000;
   private reconnectDelay = 1000;
   private isConnecting = false;
   private connectionTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private manuallyDisconnected = false;
 
   constructor() {
     super();
@@ -53,6 +55,11 @@ class SolanaWebSocketService extends EventEmitter {
   }
 
   connect(wsUrl: string): Promise<void> {
+    this.manuallyDisconnected = false;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     return new Promise((resolve, reject) => {
       // If already connected, resolve immediately
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -89,8 +96,9 @@ class SolanaWebSocketService extends EventEmitter {
       // If WebSocket exists but is in a bad state, clean it up
       if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
         logger.log('🧹 Cleaning up existing WebSocket connection');
-        this.ws.close();
+        const previous = this.ws;
         this.ws = null;
+        previous.close();
       }
 
       logger.log('🔗 Attempting to connect to:', wsUrl);
@@ -112,15 +120,18 @@ class SolanaWebSocketService extends EventEmitter {
 
       try {
         logger.log('🔗 Creating WebSocket connection...');
-        this.ws = new WebSocket(wsUrl);
+        const socket = new WebSocket(wsUrl);
+        this.ws = socket;
         
         this.connectionTimeout = setTimeout(() => {
+          if (this.ws !== socket) return;
           this.isConnecting = false;
           console.error('⏰ Connection timeout after 10 seconds');
           reject(new Error('Connection timeout after 10 seconds'));
         }, 10000);
 
         this.ws.onopen = () => {
+          if (this.ws !== socket) return;
           this.isConnecting = false;
           this.reconnectAttempts = 0;
           if (this.connectionTimeout) {
@@ -133,6 +144,7 @@ class SolanaWebSocketService extends EventEmitter {
         };
 
         this.ws.onmessage = (event) => {
+          if (this.ws !== socket) return;
           try {
             const data = JSON.parse(event.data);
             this.handleMessage(data);
@@ -142,13 +154,19 @@ class SolanaWebSocketService extends EventEmitter {
         };
 
         this.ws.onerror = (error) => {
+          if (this.ws !== socket) return;
           this.isConnecting = false;
-          console.error('❌ WebSocket error:', error);
-          this.emit('error', error);
+          logger.log('❌ WebSocket error:', error);
+          // An 'error' event without a listener throws ("Unhandled error"); onclose follows
+          // and reconnects either way.
+          if (this.listenerCount('error') > 0) {
+            this.emit('error', error);
+          }
           reject(error);
         };
 
         this.ws.onclose = (event) => {
+          if (this.ws !== socket) return;
           this.isConnecting = false;
           if (this.connectionTimeout) {
             clearTimeout(this.connectionTimeout);
@@ -157,13 +175,15 @@ class SolanaWebSocketService extends EventEmitter {
           logger.log('🔌 WebSocket closed:', event.code, event.reason);
           this.emit('disconnected', event);
           
-          // Attempt reconnection if not manually closed
-          if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+          // Keep reconnecting unless closed manually: a restarted surfnet returns at the same
+          // URL, sometimes after longer than a few short attempts.
+          if (!this.manuallyDisconnected) {
             this.reconnectAttempts++;
-            logger.log(`🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-            setTimeout(() => {
-              this.connect(wsUrl).catch(console.error);
-            }, this.reconnectDelay * this.reconnectAttempts);
+            logger.log(`🔄 Attempting reconnection ${this.reconnectAttempts}`);
+            this.reconnectTimeout = setTimeout(() => {
+              this.reconnectTimeout = null;
+              this.connect(wsUrl).catch((error) => logger.log('🔄 Reconnection failed:', error));
+            }, Math.min(this.reconnectDelay * this.reconnectAttempts, this.maxReconnectDelay));
           }
         };
 
@@ -301,7 +321,8 @@ class SolanaWebSocketService extends EventEmitter {
     });
   }
 
-  private unsubscribe(subscriptionId: string, type: 'slot' | 'transaction') {
+  unsubscribe(subscriptionId: string, type: 'slot' | 'transaction') {
+    this.subscriptions.delete(subscriptionId);
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -328,6 +349,11 @@ class SolanaWebSocketService extends EventEmitter {
   }
 
   disconnect() {
+    this.manuallyDisconnected = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect');
       this.ws = null;
@@ -390,4 +416,4 @@ class SolanaWebSocketService extends EventEmitter {
 export const solanaWebSocketService = new SolanaWebSocketService();
 
 // Export the class for static method access
-export { SolanaWebSocketService }; 
+export { SolanaWebSocketService };

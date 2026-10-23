@@ -75,9 +75,12 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     refetch: fetchConfig
   }
 
+  // Consumers connect on mount: settle configuration before choosing endpoints.
+  const settled = config !== null || error !== null
+
   return (
     <ConfigContext.Provider value={value}>
-      {children}
+      {settled ? children : null}
     </ConfigContext.Provider>
   )
-} 
+}
