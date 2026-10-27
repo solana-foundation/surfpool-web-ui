@@ -430,11 +430,10 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   }, [rpcUrl, wsUrl, reconcile, filterByAccount, filterByProgram, clearTransactions]);
 
   // A local inventory bounds reads begun before it; later transaction notifications must
-  // not be erased by an older inventory reply. Only the newest reconciliation can apply.
+  // not be erased by an older inventory reply. Never overwrite a newer applied inventory.
   const reconcileWithLocal = useCallback(async () => {
     if (!mountedRef.current) return;
     const read = ++readRef.current;
-    reconcileReadRef.current = read;
     const generation = generationRef.current;
     try {
       const response = await fetch(rpcUrl, {
@@ -443,11 +442,12 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'surfnet_getLocalSignatures', params: [] })
       });
       const data = await response.json();
-      if (!mountedRef.current || generation !== generationRef.current || reconcileReadRef.current !== read) return;
+      if (!mountedRef.current || generation !== generationRef.current || reconcileReadRef.current > read) return;
       if (!Array.isArray(data.result?.value)) {
         logger.log('Local signature reconciliation returned no inventory:', { rpcUrl, data });
         return;
       }
+      reconcileReadRef.current = read;
       const present = new Set<string>(data.result.value.map((entry: any) => entry.signature));
       localSnapshotRef.current = { read, signatures: present };
       const remaining = orderTransactions(transactionsRef.current.filter((tx) => {

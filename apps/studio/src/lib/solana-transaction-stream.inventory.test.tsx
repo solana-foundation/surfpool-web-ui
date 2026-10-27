@@ -46,6 +46,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('historical transaction inventory order and scope', () => {
+  it('applies ordered slow inventories even while newer slot reads remain pending', async () => {
+    const { result } = renderHook(() => useTransactionInspector(options));
+    await act(flush);
+    const releases: ((value: unknown) => void)[] = [];
+    inventory = () => new Promise(resolve => { releases.push(resolve); });
+    await slot(); await slot(); await slot();
+    expect(releases).toHaveLength(3);
+    await act(async () => { releases[0](reply({ value: [{ signature: 'A' }] })); await flush(); });
+    expect(signatures(result.current.transactions)).toEqual(['A']);
+    await act(async () => { releases[1](reply({ value: [{ signature: 'B' }, { signature: 'A' }] })); await flush(); });
+    expect(signatures(result.current.transactions)).toEqual(['B', 'A']);
+    await act(async () => { releases[2](reply({ value: [] })); await flush(); });
+    expect(result.current.transactions).toEqual([]);
+  });
+
+  it('does not let an older inventory overwrite a newer reset that already applied', async () => {
+    const { result } = renderHook(() => useTransactionInspector(options));
+    await act(flush);
+    const releases: ((value: unknown) => void)[] = [];
+    inventory = () => new Promise(resolve => { releases.push(resolve); });
+    await slot(); await slot();
+    await act(async () => { releases[1](reply({ value: [] })); await flush(); });
+    await act(async () => { releases[0](reply({ value: [{ signature: 'old' }] })); await flush(); });
+    expect(result.current.transactions).toEqual([]);
+    expect(requested).toEqual([]);
+  });
+
   it.each([1, 2])('retains the newest entries before applying a limit of %i', async maxTransactions => {
     const { result } = renderHook(() => useTransactionInspector({ ...options, maxTransactions }));
     await act(flush); await notify('C'); local = ['C', 'B', 'A'];
