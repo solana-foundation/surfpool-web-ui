@@ -156,7 +156,7 @@ class SolanaWebSocketService extends EventEmitter {
         this.ws.onerror = (error) => {
           if (this.ws !== socket) return;
           this.isConnecting = false;
-          logger.log('❌ WebSocket error:', error);
+          logger.error('❌ WebSocket error:', error);
           // An 'error' event without a listener throws ("Unhandled error"); onclose follows
           // and reconnects either way.
           if (this.listenerCount('error') > 0) {
@@ -173,6 +173,7 @@ class SolanaWebSocketService extends EventEmitter {
             this.connectionTimeout = null;
           }
           logger.log('🔌 WebSocket closed:', event.code, event.reason);
+          this.subscriptions.clear();
           this.emit('disconnected', event);
           
           // Keep reconnecting unless closed manually: a restarted surfnet returns at the same
@@ -182,7 +183,7 @@ class SolanaWebSocketService extends EventEmitter {
             logger.log(`🔄 Attempting reconnection ${this.reconnectAttempts}`);
             this.reconnectTimeout = setTimeout(() => {
               this.reconnectTimeout = null;
-              this.connect(wsUrl).catch((error) => logger.log('🔄 Reconnection failed:', error));
+              this.connect(wsUrl).catch((error) => logger.error('🔄 Reconnection failed:', error));
             }, Math.min(this.reconnectDelay * this.reconnectAttempts, this.maxReconnectDelay));
           }
         };
@@ -353,16 +354,17 @@ class SolanaWebSocketService extends EventEmitter {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
-    if (this.ws) {
-      this.ws.close(1000, 'Manual disconnect');
-      this.ws = null;
-    }
+    const socket = this.ws;
+    const wasActive = socket !== null && socket.readyState !== WebSocket.CLOSED;
+    this.ws = null;
+    if (socket) socket.close(1000, 'Manual disconnect');
     this.subscriptions.clear();
     this.isConnecting = false;
     if (this.connectionTimeout) {
       clearTimeout(this.connectionTimeout);
       this.connectionTimeout = null;
     }
+    if (wasActive) this.emit('disconnected', { code: 1000, reason: 'Manual disconnect' });
   }
 
   isConnected(): boolean {
