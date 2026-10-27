@@ -26,7 +26,9 @@ function mount(historical=true) {
 }
 beforeEach(()=>{
  vi.useFakeTimers();service=new Service();fetcher=vi.fn(async()=>reply(10020));
- vi.stubGlobal('fetch',fetcher);
+ vi.stubGlobal('fetch',(url:string,init:RequestInit)=>
+  JSON.parse(init.body as string).method==='surfnet_getClockState'
+   ? Promise.resolve({ok:true,json:async()=>({result:{paused:true}})}) : fetcher(url,init));
  vi.stubGlobal('MutationObserver',class {observe(){} disconnect(){}});
 });
 afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();});

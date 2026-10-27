@@ -7,7 +7,7 @@ import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
 import { getTimeUnitInMs, logger, MONEYMQ_ENDPOINT, SURFNET_DOMAIN } from '@surfpool/shared';
-import { Faucet } from '@surfpool/svm';
+import { Faucet, useClockState } from '@surfpool/svm';
 import { Dialog, DialogActions, DialogBody, DialogTitle, Listbox, ListboxOption, Switch } from '@surfpool/ui';
 import { parse, stringify } from 'lossless-json';
 import { useEffect, useRef, useState } from 'react';
@@ -29,8 +29,7 @@ interface ExplorerHeaderProps {
 const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) => {
   const { rpcUrl, wsUrl, rpcDatasourceUrl, historical, loading: configLoading, error: configError, refetch } = useAppConfig();
   const [wsConnected, setWsConnected] = useState<boolean>(false);
-  // A historical surfnet starts with its clock frozen at the boundary slot.
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(historical);
+  const [isClockPaused, setIsClockPaused] = useClockState(rpcUrl, solanaWebSocketService, historical);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [transferLocalState, setTransferLocalState] = useState(true);
@@ -174,19 +173,6 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
     };
   }, [refetch]);
 
-  // Listen for global pause state changes
-  useEffect(() => {
-    const handlePauseChange = (event: CustomEvent) => {
-      setIsClockPaused(event.detail.isPaused);
-    };
-
-    window.addEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-
-    return () => {
-      window.removeEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-    };
-  }, []);
-
   // Fetch epoch data on mount
   useEffect(() => {
     const fetchEpochData = async () => {
@@ -315,6 +301,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
+    if (isClockPaused === null) return;
     try {
       const method = isClockPaused ? 'surfnet_resumeClock' : 'surfnet_pauseClock';
 
@@ -566,8 +553,9 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             <div className="grid w-full grid-cols-4 gap-2">
               <button
                 onClick={toggleClock}
+                disabled={isClockPaused === null}
                 className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 py-4 transition-colors hover:bg-zinc-700"
-                title={isClockPaused ? 'Resume clock' : 'Pause clock'}
+                title={isClockPaused === null ? 'Unknown clock state; reconnect to retry' : isClockPaused ? 'Resume clock' : 'Pause clock'}
               >
                 {isClockPaused ? (
                   <PlayIcon className="h-8 w-8 text-zinc-300" />
@@ -575,7 +563,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
                   <PauseIcon className="h-8 w-8 text-zinc-300" />
                 )}
                 <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-300">
-                  {isClockPaused ? 'Resume' : 'Pause Clock'}
+                  {isClockPaused === null ? 'Clock unknown' : isClockPaused ? 'Resume' : 'Pause Clock'}
                 </span>
               </button>
 
@@ -643,8 +631,9 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
         <div className="mt-8 grid w-full grid-cols-3 gap-2">
           <button
             onClick={toggleClock}
+            disabled={isClockPaused === null}
             className="flex flex-col items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 py-4 transition-colors hover:bg-zinc-700"
-            title={isClockPaused ? 'Resume clock' : 'Pause clock'}
+            title={isClockPaused === null ? 'Unknown clock state; reconnect to retry' : isClockPaused ? 'Resume clock' : 'Pause clock'}
           >
             {isClockPaused ? (
               <PlayIcon className="h-8 w-8 text-zinc-300" />
@@ -652,7 +641,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
               <PauseIcon className="h-8 w-8 text-zinc-300" />
             )}
             <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-300">
-              {isClockPaused ? 'Resume' : 'Pause Clock'}
+              {isClockPaused === null ? 'Clock unknown' : isClockPaused ? 'Resume' : 'Pause Clock'}
             </span>
           </button>
 

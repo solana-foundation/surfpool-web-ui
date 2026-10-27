@@ -451,10 +451,14 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           successful: remaining.filter(tx => !tx.meta?.err).length,
           failed: remaining.filter(tx => tx.meta?.err).length, lastUpdate: new Date() }));
       }
+      for (const entry of [...data.result.value].reverse()) {
+        if (!mountedRef.current || generation !== generationRef.current || reconcileReadRef.current !== read) return;
+        await processTransactionSignature(entry.signature, entry.err, read, generation);
+      }
     } catch (err) {
       logger.log('Local signature reconciliation failed:', err);
     }
-  }, [rpcUrl]);
+  }, [rpcUrl, processTransactionSignature]);
 
   useEffect(() => {
     let disconnected = false;

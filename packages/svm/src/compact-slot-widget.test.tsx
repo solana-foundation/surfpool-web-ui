@@ -20,6 +20,9 @@ const epochInfo = (absoluteSlot: number) => ({
   absoluteSlot,
 });
 const reply = (result: unknown) => ({ json: async () => ({ result }) });
+const withClockState = (fetcher: (url: string, init: RequestInit) => Promise<unknown>) =>
+  (url: string, init: RequestInit) => JSON.parse(init.body as string).method === 'surfnet_getClockState'
+    ? Promise.resolve({ ok: true, json: async () => ({ result: { paused: true } }) }) : fetcher(url, init);
 const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 };
@@ -39,7 +42,7 @@ afterEach(() => {
 describe('CompactSlotWidget', () => {
   it('re-reads the authoritative slot when a historical surfnet reconnects', async () => {
     let current = 413023262;
-    vi.stubGlobal('fetch', async () => reply(epochInfo(current)));
+    vi.stubGlobal('fetch', withClockState(async () => reply(epochInfo(current))));
     const service = new FakeService();
     render(<CompactSlotWidget rpcUrl="http://fork.invalid" wsUrl="ws://fork.invalid" solanaWebSocketService={service} historical />);
     await act(flush);
@@ -54,7 +57,7 @@ describe('CompactSlotWidget', () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => (release = resolve));
     let calls = 0;
-    vi.stubGlobal('fetch', async () => (++calls === 1 ? reply(epochInfo(413023261)) : pending));
+    vi.stubGlobal('fetch', withClockState(async () => (++calls === 1 ? reply(epochInfo(413023261)) : pending)));
     const service = new FakeService();
     render(<CompactSlotWidget rpcUrl="http://fork.invalid" wsUrl="ws://fork.invalid" solanaWebSocketService={service} historical />);
     await act(flush);

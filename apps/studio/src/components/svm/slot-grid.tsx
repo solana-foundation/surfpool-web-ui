@@ -8,6 +8,7 @@ import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon } from '@heroicons/react/24/solid';
 import { snapshotDownloadContents } from '@/lib/scenarios-api';
 import { getTimeUnitInMs, logger } from '@surfpool/shared';
+import { useClockState } from '@surfpool/svm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type TimeTravelMode = 'date' | 'epoch' | 'slot';
@@ -48,8 +49,7 @@ export const SlotsGrid: React.FC = () => {
   const [currentEpoch, setCurrentEpoch] = useState<number>(0);
   const [currentSlot, setCurrentSlot] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(DEFAULT_SLOTS_IN_EPOCH);
-  // A historical surfnet starts with its clock frozen at the boundary slot.
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(historical);
+  const [isClockPaused, setIsClockPaused] = useClockState(rpcUrl, solanaWebSocketService, historical);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
   const [ignoreSlotEvents, setIgnoreSlotEvents] = useState<boolean>(false);
 
@@ -221,6 +221,7 @@ export const SlotsGrid: React.FC = () => {
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
+    if (isClockPaused === null) return;
     try {
       const method = isClockPaused ? 'surfnet_resumeClock' : 'surfnet_pauseClock';
 
@@ -770,8 +771,9 @@ export const SlotsGrid: React.FC = () => {
         <div className="flex gap-2">
           <button
             onClick={toggleClock}
+            disabled={isClockPaused === null}
             className="flex h-8 w-8 items-center justify-center rounded-md border border-zinc-600 bg-zinc-800 transition-colors hover:bg-zinc-700"
-            title={isClockPaused ? 'Resume clock' : 'Pause clock'}
+            title={isClockPaused === null ? 'Unknown clock state; reconnect to retry' : isClockPaused ? 'Resume clock' : 'Pause clock'}
           >
             {isClockPaused ? (
               <PlayIcon className="h-4 w-4 text-zinc-300" />

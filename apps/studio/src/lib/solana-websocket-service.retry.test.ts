@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SolanaWebSocketService } from './solana-websocket-service';
+import { logger } from '@surfpool/shared';
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -23,7 +24,8 @@ class FakeSocket {
     this.readyState = FakeSocket.CLOSED;
     this.onclose?.({ code, reason });
   }
-  send() {}
+  sent: string[] = [];
+  send(message: string) { this.sent.push(message); }
 }
 
 beforeEach(() => {
@@ -34,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function droppedService() {
@@ -46,6 +49,70 @@ async function droppedService() {
 }
 
 describe('SolanaWebSocketService', () => {
+  it('reports manual disconnect once even when the browser closes asynchronously', async () => {
+    const service = new SolanaWebSocketService();
+    const connected = service.connect('ws://fork.invalid');
+    const socket = FakeSocket.instances[0];
+    socket.open();
+    await connected;
+    socket.close = (code = 1000, reason = '') => {
+      socket.readyState = FakeSocket.CLOSING;
+      setTimeout(() => {
+        socket.readyState = FakeSocket.CLOSED;
+        socket.onclose?.({ code, reason });
+      }, 0);
+    };
+    const disconnected = vi.fn();
+    service.on('disconnected', disconnected);
+    service.disconnect();
+    expect(disconnected).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(disconnected).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it('does not send dead subscription IDs to a replacement connection', async () => {
+    const service = new SolanaWebSocketService();
+    const connected = service.connect('ws://fork.invalid');
+    const first = FakeSocket.instances[0];
+    first.open();
+    await connected;
+    const subscribe = async (socket: FakeSocket, id: number) => {
+      const pending = service.subscribeToTransactions();
+      const request = JSON.parse(socket.sent.at(-1)!);
+      socket.onmessage?.({ data: JSON.stringify({ id: request.id, result: id }) });
+      await pending;
+    };
+    await subscribe(first, 11);
+    first.close(1006);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const replacement = FakeSocket.instances[1];
+    replacement.open();
+    await subscribe(replacement, 22);
+    service.unsubscribeAll();
+    expect(replacement.sent.map(message => JSON.parse(message))
+      .filter(message => message.method === 'logsUnsubscribe')
+      .map(message => message.params)).toEqual([[22]]);
+    service.disconnect();
+  });
+
+  it('logs socket errors and failed retries even without debug logging', async () => {
+    const logged = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const service = new SolanaWebSocketService();
+    const connected = service.connect('ws://fork.invalid');
+    const failed = connected.catch(error => error);
+    const error = new Error('socket refused');
+    FakeSocket.instances[0].onerror?.(error);
+    await failed;
+    expect(logged).toHaveBeenCalledWith('❌ WebSocket error:', error);
+    FakeSocket.instances[0].close(1006);
+    await vi.advanceTimersByTimeAsync(1_000);
+    FakeSocket.instances[1].onerror?.(error);
+    await Promise.resolve();
+    expect(logged).toHaveBeenCalledWith('🔄 Reconnection failed:', error);
+    service.disconnect();
+  });
+
   it('ignores an asynchronously closing socket after a replacement starts', async () => {
     const service = new SolanaWebSocketService();
     const first = service.connect('ws://first.invalid');

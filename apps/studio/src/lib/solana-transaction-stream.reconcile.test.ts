@@ -43,6 +43,59 @@ afterEach(() => {
 });
 
 describe('useTransactionInspector on a historical surfnet (reconcile)', () => {
+  it('loads transactions missed during disconnection without duplicating existing entries', async () => {
+    service.current = new FakeService();
+    let local = ['A'];
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      const query = JSON.parse(init.body);
+      if (query.method === 'surfnet_getLocalSignatures') return reply({ value: local.map(signature => ({ signature })) });
+      if (query.method === 'getTransaction') {
+        requests.push(query.params[0]);
+        return reply(transaction(query.params[0]));
+      }
+      throw new Error(`unexpected ${query.method}`);
+    });
+    const { result } = renderHook(() => useTransactionInspector({ ...urls, reconcile: true }));
+    await act(flush);
+    expect(result.current.transactions.map(tx => tx.transaction.signatures[0])).toEqual(['A']);
+    local = ['B', 'A'];
+    await act(async () => {
+      service.current.emit('disconnected');
+      service.current.emit('connected');
+      await flush();
+    });
+    expect(result.current.transactions.map(tx => tx.transaction.signatures[0])).toEqual(['B', 'A']);
+    await act(async () => { service.current.emit('slot', { slot: 101 }); await flush(); });
+    expect(requests).toEqual(['A', 'B']);
+  });
+
+  it('rejects a missed-transaction load superseded by a reset inventory', async () => {
+    service.current = new FakeService();
+    let local = ['A'];
+    let release!: (response: unknown) => void;
+    const pending = new Promise(resolve => { release = resolve; });
+    const requested: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      const query = JSON.parse(init.body);
+      if (query.method === 'surfnet_getLocalSignatures') return reply({ value: local.map(signature => ({ signature })) });
+      if (query.method === 'getTransaction') {
+        requested.push(query.params[0]);
+        return query.params[0] === 'B' ? pending : reply(transaction(query.params[0]));
+      }
+      throw new Error(`unexpected ${query.method}`);
+    });
+    const { result } = renderHook(() => useTransactionInspector({ ...urls, reconcile: true }));
+    await act(flush);
+    local = ['B', 'A'];
+    await act(async () => { service.current.emit('slot', { slot: 101 }); await flush(); });
+    expect(requested).toContain('B');
+    local = [];
+    await act(async () => { service.current.emit('slot', { slot: 100 }); await flush(); });
+    await act(async () => { release(reply(transaction('B'))); await flush(); });
+    expect(result.current.transactions).toEqual([]);
+  });
+
   it('drops a transaction load that began before a reset cleared the list', async () => {
     service.current = new FakeService();
     let local: string[] = [];

@@ -34,11 +34,40 @@ async function notify(slot: number) {
 beforeEach(() => {
   vi.useFakeTimers(); service = new Service();
   fetcher = vi.fn(async () => reply(info(10, 10020, 20, 1000)));
-  vi.stubGlobal('fetch', fetcher);
+  vi.stubGlobal('fetch', (url: string, init: RequestInit) =>
+    JSON.parse(init.body as string).method === 'surfnet_getClockState'
+      ? Promise.resolve({ ok: true, json: async () => ({ result: { paused: true } }) })
+      : fetcher(url, init));
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('historical epoch range refresh', () => {
+  it('keeps absolute slots when a time-travel event contains an epoch-relative slotIndex', async () => {
+    const view = mount(); await act(flush);
+    fetcher.mockResolvedValue(reply(info(11, 11000, 0, 1000)));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('epochChanged', { detail: info(11, 11000, 0, 1000) }));
+      await flush();
+    });
+    expect(view.slot()).toBe(11000); expect(view.epoch()).toBe(11);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an older time-travel response overwrite a newer warp', async () => {
+    const pending = deferred();
+    const view = mount(); await act(flush);
+    fetcher.mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(reply(info(12, 12000, 0, 1000)));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('epochChanged', { detail: { epoch: 11, slotIndex: 0 } }));
+      await flush();
+      window.dispatchEvent(new CustomEvent('epochChanged', { detail: { epoch: 12, slotIndex: 0 } }));
+      await flush();
+    });
+    await act(async () => { pending.resolve(reply(info(11, 11000, 0, 1000))); await flush(); });
+    expect(view.slot()).toBe(12000); expect(view.epoch()).toBe(12);
+  });
+
   it('refreshes the epoch when a real c4-style warp leaves its authoritative range', async () => {
     const initial = info(956, 413023261, 31261, 432000);
     const next = initial.absoluteSlot - initial.slotIndex + initial.slotsInEpoch;

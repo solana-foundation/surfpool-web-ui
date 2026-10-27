@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { logger } from '@surfpool/shared';
+import { useClockState } from './lib/use-clock-state';
 
 interface CompactSlotWidgetProps {
   className?: string;
@@ -38,12 +39,12 @@ export default function CompactSlotWidget({
   const [epochProgress, setEpochProgress] = useState<number>(0);
   const [activeBarIndex, setActiveBarIndex] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(historical);
+  const [isClockPaused] = useClockState(rpcUrl, externalWsService, historical);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
   const [isDisconnected, setIsDisconnected] = useState<boolean>(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const lastSlotReceivedRef = useRef<number>(Date.now());
-  const isClockPausedRef = useRef<boolean>(historical);
+  const isClockPausedRef = useRef<boolean | null>(null);
   const slotsInEpochRef = useRef<number>(432000);
   const refreshEpochRef = useRef<((coalesce?: boolean) => void) | null>(null);
   const slotNotificationsRef = useRef(0);
@@ -367,24 +368,14 @@ export default function CompactSlotWidget({
     };
   }, [cleanupOnUnmount, externalWsService]);
 
-  // Listen for global pause state changes from other components
-  useEffect(() => {
-    const handlePauseChange = (event: CustomEvent) => {
-      logger.log('CompactSlotWidget: Received pause state change:', event.detail.isPaused);
-      setIsClockPaused(event.detail.isPaused);
-    };
-
-    window.addEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-
-    return () => {
-      window.removeEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-    };
-  }, []);
-
   // Listen for epoch changes (e.g., from time travel)
   useEffect(() => {
     const handleEpochChange = (event: CustomEvent) => {
       logger.log('CompactSlotWidget: Received epoch change:', event.detail);
+      if (historical) {
+        refreshEpochRef.current?.();
+        return;
+      }
       if (event.detail.epoch !== undefined) {
         setEpoch(event.detail.epoch);
       }
@@ -401,7 +392,7 @@ export default function CompactSlotWidget({
     return () => {
       window.removeEventListener('epochChanged', handleEpochChange as EventListener);
     };
-  }, []);
+  }, [historical]);
 
   // Blinking animation when clock is paused
   useEffect(() => {
