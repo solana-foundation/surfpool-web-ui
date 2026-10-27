@@ -124,6 +124,22 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       (!reconcile || !snapshot || read > snapshot.read || snapshot.signatures.has(signature));
   }, [reconcile]);
 
+  const orderTransactions = useCallback((candidates: TransactionInfo[]) => {
+    const snapshot = localSnapshotRef.current;
+    if (!snapshot) return candidates;
+    const newer = candidates.filter(tx => {
+      const loaded = transactionReadsRef.current.get(tx.transaction.signatures[0]);
+      return loaded !== undefined && loaded > snapshot.read &&
+        !snapshot.signatures.has(tx.transaction.signatures[0]);
+    });
+    const bySignature = new Map(candidates.map(tx => [tx.transaction.signatures[0], tx]));
+    for (const tx of newer) bySignature.delete(tx.transaction.signatures[0]);
+    return [...newer, ...Array.from(snapshot.signatures).flatMap(signature => {
+      const tx = bySignature.get(signature);
+      return tx === undefined ? [] : [tx];
+    })];
+  }, []);
+
   const fetchTransactionDetails = useCallback(async (signature: string, read: number, generation: number) => {
     try {
       logger.log('🌐 Fetching transaction details from:', rpcUrl);
@@ -187,11 +203,14 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
         }
 
         logger.log('📊 Adding transaction to state...');
-        const newTransactions = [txInfo, ...transactionsRef.current].slice(0, maxTransactions);
         transactionReadsRef.current.set(signature, read);
+        const newTransactions = orderTransactions([txInfo, ...transactionsRef.current]).slice(0, maxTransactions);
         const kept = new Set(newTransactions.map(tx => tx.transaction.signatures[0]));
         for (const key of transactionReadsRef.current.keys()) {
-          if (!kept.has(key)) transactionReadsRef.current.delete(key);
+          if (!kept.has(key)) {
+            transactionReadsRef.current.delete(key);
+            if (reconcile && fetchHistorical) processedSignaturesRef.current.delete(key);
+          }
         }
         transactionsRef.current = newTransactions;
         setTransactions(newTransactions);
@@ -215,7 +234,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       console.error('Error fetching transaction details:', err);
     }
     return false;
-  }, [rpcUrl, filterByProgram, maxTransactions, currentRead]);
+  }, [rpcUrl, filterByProgram, maxTransactions, currentRead, orderTransactions, reconcile, fetchHistorical]);
 
   const processTransactionSignature = useCallback(async (
     signature: string, err?: any, read = ++readRef.current, generation = generationRef.current
@@ -431,13 +450,14 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       }
       const present = new Set<string>(data.result.value.map((entry: any) => entry.signature));
       localSnapshotRef.current = { read, signatures: present };
-      const remaining = transactionsRef.current.filter((tx) => {
+      const remaining = orderTransactions(transactionsRef.current.filter((tx) => {
         const signature = tx.transaction.signatures[0];
         const loaded = transactionReadsRef.current.get(signature);
         return present.has(signature) || (loaded !== undefined && loaded > read);
-      });
-      if (remaining.length !== transactionsRef.current.length) {
-        logger.log('🔄 The surfnet no longer lists some transactions, reloading the list');
+      }));
+      if (remaining.length !== transactionsRef.current.length ||
+          remaining.some((tx, index) => tx !== transactionsRef.current[index])) {
+        logger.log('🔄 The surfnet transaction inventory changed, reconciling the list');
         for (const tx of transactionsRef.current) {
           const signature = tx.transaction.signatures[0];
           if (!present.has(signature) && !remaining.includes(tx)) {
@@ -451,14 +471,22 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
           successful: remaining.filter(tx => !tx.meta?.err).length,
           failed: remaining.filter(tx => tx.meta?.err).length, lastUpdate: new Date() }));
       }
-      for (const entry of [...data.result.value].reverse()) {
+      if (!fetchHistorical) return;
+      let listed = 0;
+      for (const entry of data.result.value) {
         if (!mountedRef.current || generation !== generationRef.current || reconcileReadRef.current !== read) return;
         await processTransactionSignature(entry.signature, entry.err, read, generation);
+        if (transactionReadsRef.current.has(entry.signature)) listed++;
+        const newer = transactionsRef.current.filter(tx => {
+          const loaded = transactionReadsRef.current.get(tx.transaction.signatures[0]);
+          return loaded !== undefined && loaded > read && !present.has(tx.transaction.signatures[0]);
+        }).length;
+        if (listed + newer >= maxTransactions) break;
       }
     } catch (err) {
       logger.log('Local signature reconciliation failed:', err);
     }
-  }, [rpcUrl, processTransactionSignature]);
+  }, [rpcUrl, processTransactionSignature, orderTransactions, fetchHistorical, maxTransactions]);
 
   useEffect(() => {
     let disconnected = false;
