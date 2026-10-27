@@ -354,7 +354,7 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       mountedRef.current = false;
       streamOperationRef.current++;
     };
-  }, [rpcUrl, wsUrl, filterByAccount, filterByProgram]);
+  }, [wsUrl, filterByAccount, filterByProgram]);
 
   useEffect(() => {
     let disconnected = false;
