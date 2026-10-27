@@ -420,12 +420,17 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
 
   useEffect(() => {
     mountedRef.current = true;
-    if (reconcile) clearTransactions();
     return () => {
       mountedRef.current = false;
+      streamOperationRef.current++;
+    };
+  }, [wsUrl, filterByAccount, filterByProgram]);
+
+  useEffect(() => {
+    if (reconcile) clearTransactions();
+    return () => {
       generationRef.current++;
       reconcileReadRef.current = ++readRef.current;
-      streamOperationRef.current++;
     };
   }, [rpcUrl, wsUrl, reconcile, filterByAccount, filterByProgram, clearTransactions]);
 

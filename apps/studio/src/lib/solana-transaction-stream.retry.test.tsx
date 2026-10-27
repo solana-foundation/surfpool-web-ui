@@ -36,9 +36,71 @@ const mount = (options = {}) => renderHook(() => useTransactionInspector({
   fetchHistorical: false, ...options
 }));
 beforeEach(() => { service = new Service(); state.service = service; });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('normal transaction stream reconnect', () => {
+  it('invalidates old historical inventory without cancelling the pending subscription', async () => {
+    let finish!: () => void;
+    let release!: (value: any) => void;
+    const oldInventory = new Promise(resolve => { release = resolve; });
+    service.subscribeToTransactions.mockImplementationOnce(() => new Promise<string>(resolve => {
+      finish = () => { service.active.add('pending'); resolve('pending'); };
+    }));
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: { body: string }) => {
+      requests.push(JSON.parse(init.body).method);
+      return url === 'http://fork.invalid' ? oldInventory :
+        { ok: true, status: 200, json: async () => ({ result: { value: [] } }) };
+    });
+    const hook = renderHook(({ rpcUrl }) => useTransactionInspector({
+      rpcUrl, wsUrl: 'ws://fork.invalid', reconcile: true
+    }), { initialProps: { rpcUrl: 'http://fork.invalid' } });
+    await act(flush);
+    expect(requests).toContain('surfnet_getLocalSignatures');
+    hook.rerender({ rpcUrl: 'http://refreshed.invalid' });
+    await act(async () => {
+      release({ ok: true, status: 200, json: async () => ({ result: { value: [{ signature: 'old' }] } }) });
+      finish(); await flush();
+    });
+    expect(service.active.size).toBe(1);
+    expect(service.connect).toHaveBeenCalledTimes(1);
+    expect(requests).not.toContain('getTransaction');
+    expect(hook.result.current.transactions).toEqual([]);
+  });
+
+  for (const stage of ['connect', 'subscribe']) {
+    for (const autoStart of [true, false]) {
+      it(`preserves a pending ${stage} across RPC refresh (autoStart=${autoStart})`, async () => {
+        let finish!: () => void;
+        if (stage === 'connect') {
+          service.connect.mockImplementationOnce(() => new Promise<void>(resolve => {
+            finish = () => { service.emit('connected'); resolve(); };
+          }));
+        } else {
+          service.subscribeToTransactions.mockImplementationOnce(() => new Promise<string>(resolve => {
+            finish = () => { service.active.add('pending'); resolve('pending'); };
+          }));
+        }
+        const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ result: null }) }));
+        vi.stubGlobal('fetch', fetch);
+        const hook = renderHook(({ rpcUrl }) => useTransactionInspector({
+          rpcUrl, wsUrl: 'ws://fork.invalid', fetchHistorical: false, autoStart
+        }), { initialProps: { rpcUrl: 'http://fork.invalid' } });
+        if (!autoStart) act(() => { void hook.result.current.startStreaming(); });
+        await act(flush);
+        hook.rerender({ rpcUrl: 'http://refreshed.invalid' });
+        await act(async () => { finish(); await flush(); });
+        expect(service.connect).toHaveBeenCalledTimes(1);
+        expect(service.subscribeToTransactions).toHaveBeenCalledTimes(1);
+        expect(service.active.size).toBe(1);
+        expect(hook.result.current.stats.connectionStatus).toBe('connected');
+        expect(hook.result.current.isStreaming).toBe(true);
+        await act(async () => { service.emit('transaction', { value: { signature: 'new-tx' } }); await flush(); });
+        expect(fetch).toHaveBeenCalledWith('http://refreshed.invalid', expect.any(Object));
+      });
+    }
+  }
+
   it('restores its log subscription after the server connection is replaced', async () => {
     const hook = mount(); await act(flush);
     expect(service.subscribeToTransactions).toHaveBeenCalledTimes(1);
