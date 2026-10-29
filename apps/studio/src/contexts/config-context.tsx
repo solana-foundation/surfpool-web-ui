@@ -1,5 +1,5 @@
 import { logger } from '@surfpool/shared'
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 
 interface Config {
   rpc_url: string
@@ -34,19 +34,25 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
   const [config, setConfig] = useState<Config | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [settled, setSettled] = useState(false)
+  const request = useRef<AbortController | null>(null)
 
   const fetchConfig = async () => {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    const timeout = setTimeout(() => controller.abort(), 10_000)
     try {
       setLoading(true)
       setError(null)
       
       // Try local /config endpoint first
-      let response = await fetch('/config')
+      let response = await fetch('/config', { signal: controller.signal })
       if (!response.ok) {
         const fallbackUrl = process.env.NEXT_PUBLIC_STUDIO_URL || 'http://127.0.0.1:18488'
         logger.log(`⚠️ Local /config failed, trying ${fallbackUrl}/config`)
         // Fallback to the full URL
-        response = await fetch(`${fallbackUrl}/config`)
+        response = await fetch(`${fallbackUrl}/config`, { signal: controller.signal })
         if (!response.ok) {
           throw new Error(`Failed to fetch config from both endpoints: ${response.status}`)
         }
@@ -54,18 +60,29 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       
       const data: Config = await response.json()
       logger.log('📋 Config loaded:', data)
-      setConfig(data)
+      if (request.current === controller) setConfig(data)
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch config'
+      if (request.current !== controller) return
+      const errorMessage = controller.signal.aborted
+        ? 'Studio configuration request timed out'
+        : err instanceof Error ? err.message : 'Failed to fetch config'
       console.error('❌ Config fetch error:', errorMessage)
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      clearTimeout(timeout)
+      if (request.current === controller) {
+        setLoading(false)
+        setSettled(true)
+      }
     }
   }
 
   useEffect(() => {
     fetchConfig()
+    return () => {
+      request.current?.abort()
+      request.current = null
+    }
   }, [])
 
   const value: ConfigContextType = {
@@ -75,9 +92,10 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     refetch: fetchConfig
   }
 
+  // Consumers connect on mount: settle configuration before choosing endpoints.
   return (
     <ConfigContext.Provider value={value}>
-      {children}
+      {settled ? children : <p role="status">Loading Studio configuration…</p>}
     </ConfigContext.Provider>
   )
-} 
+}
