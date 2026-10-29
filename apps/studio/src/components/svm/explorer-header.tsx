@@ -197,6 +197,7 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
             jsonrpc: '2.0',
             id: 1,
             method: 'getEpochInfo',
+            params: [{ commitment: 'processed' }],
           }),
         });
         if (response.ok) {

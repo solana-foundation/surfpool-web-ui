@@ -131,6 +131,10 @@ const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[
   { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
 ];
 
+// A pubkey address the template leaves empty names no account; the override carries the one it targets.
+const leavesAccountToOverride = (address: any) =>
+  !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
+
 export default function ScenarioEditor({
   scenarioId = 'default',
   scenarioName = 'Scenario',
@@ -159,39 +163,15 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const accountRequestRef = useRef(0);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [editingAction, setEditingAction] = useState<{ slotId: string; actionIndex: number } | null>(null);
-
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
+
+  const accountRequestRef = useRef(0);
   const isFirstSlotsChangeRef = useRef(true);
-
-  useEffect(() => {
-    const properties = (selectedAction?.template?.properties ?? []) as any[];
-    const sources = Array.from(
-      new Set(
-        properties
-          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
-          .map((prop) => prop.source as string)
-      )
-    );
-    if (sources.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    const handleOptionsLoaded = (optionLists: DynamicRefOption[][]) => {
-      if (cancelled) return;
-      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
-    };
-    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, source))).then(handleOptionsLoaded);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAction, studioUrl]);
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -663,13 +643,14 @@ export default function ScenarioEditor({
         addressString =
           action.template.address.pubkey || action.template.address.address || action.template.address.value;
       }
-      if (accountPubkey) addressString = accountPubkey;
+      // A PDA template, or one that leaves the account to the override, reads the saved account.
+      if (accountPubkey && !addressString) addressString = accountPubkey;
 
       // Step 1: Fetch account info, parsed as JSON when the template edits account fields
       logger.log('🔍 Fetching account info for address:', addressString);
 
-      // A template whose properties are all inputs or dynamic_refs (the Phoenix market templates) edits
-      // no field of the account, so its decoded data would only be sent back as override values.
+      // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
+      // its decoded data would only be sent back as override values.
       // An empty slice still pulls the account into the local VM for Play, without decoding it.
       const properties = action.template.properties ?? [];
       const inputsOnly =
@@ -835,11 +816,13 @@ export default function ScenarioEditor({
                     overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
-                    // A saved override keeps the plain address it was created for (such as a Phoenix
-                    // Trader). A derived (PDA) address is rebuilt from the template, so edited seed
+                    // A template with no address keeps the account the override was saved for, such as a trader
+                    // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
                     // fields such as a token or fee tier pick the new account.
                     account:
-                      existingAction.actionId === action.id && existingAction.account?.pubkey
+                      leavesAccountToOverride(action.template?.address) &&
+                      existingAction.actionId === action.id &&
+                      existingAction.account?.pubkey
                         ? existingAction.account
                         : action.template?.address,
                   }
@@ -874,6 +857,7 @@ export default function ScenarioEditor({
             jsonrpc: '2.0',
             id: 1,
             method: 'getEpochInfo',
+            params: [{ commitment: 'processed' }],
           }),
         });
 
@@ -915,7 +899,7 @@ export default function ScenarioEditor({
     }
   };
 
-  const handlePlay = async () => {
+  const startPlay = async () => {
     // Build scenario structure for RPC
     const overrides = slots.flatMap((slot) =>
       slot.actions.map((action) => {
@@ -1007,6 +991,17 @@ export default function ScenarioEditor({
     setCurrentPlaybackSlot(0);
     setIsExecuting(true);
     setMode('play');
+  };
+
+  // Registering waits for surfnet to prepare the scenario, which takes seconds for large ones.
+  const handlePlay = async () => {
+    if (isStartingPlay) return;
+    setIsStartingPlay(true);
+    try {
+      await startPlay();
+    } finally {
+      setIsStartingPlay(false);
+    }
   };
 
   const handleStop = () => {
@@ -1125,6 +1120,31 @@ export default function ScenarioEditor({
       setDownloadError('Download failed');
     }
   };
+
+  useEffect(() => {
+    const properties = (selectedAction?.template?.properties ?? []) as any[];
+    const sources = Array.from(
+      new Set(
+        properties
+          .filter((prop) => prop && typeof prop !== 'string' && prop.type === 'dynamic_ref' && prop.source)
+          .map((prop) => prop.source as string)
+      )
+    );
+    if (sources.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const handleOptionsLoaded = (optionLists: DynamicRefOption[][]) => {
+      if (cancelled) return;
+      setDynamicOptions(Object.fromEntries(sources.map((source, index) => [source, optionLists[index]])));
+    };
+    Promise.all(sources.map((source) => fetchDynamicRefOptions(studioUrl, rpcUrl, source))).then(handleOptionsLoaded);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAction, studioUrl, rpcUrl]);
 
   return (
     <div className="relative flex h-full">
@@ -2233,12 +2253,8 @@ export default function ScenarioEditor({
 
                                         // Regular field - render input based on type
                                         const typeString = String(typeInfo.type);
-                                        const isPhoenixCollateral =
-                                          selectedAction.template?.id === 'phoenix-trader-collateral-stress' &&
-                                          fieldPath === 'traderState.quoteLotCollateral';
                                         const inputType =
-                                          !isPhoenixCollateral &&
-                                          (typeString.startsWith('i') || typeString.startsWith('u'))
+                                          typeString.startsWith('i') || typeString.startsWith('u')
                                             ? 'number'
                                             : typeString === 'bool'
                                               ? 'checkbox'
@@ -2520,11 +2536,12 @@ export default function ScenarioEditor({
                                               const currentValue = rawValue != null ? String(rawValue) : '';
                                               const isModified = modifiedFields.has(fieldPath);
 
-                                              // A live list (today only Phoenix markets) is always searchable and takes custom values;
+                                              // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
                                               const useCombobox = isLiveList || constantDef.options.length > 20;
-                                              const { options, selectedOption } = resolveTokenSelectorOptions(
+                                              // A saved value the catalog lacks stays selectable as its custom option.
+                                              const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
                                                 currentValue
                                               );
@@ -2555,7 +2572,7 @@ export default function ScenarioEditor({
                                                     />
                                                   ) : (
                                                     <Select
-                                                      value={String(selectedOption?.value ?? '')}
+                                                      value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
                                                         setValue(fieldPath, e.target.value);
                                                       }}
@@ -2566,7 +2583,7 @@ export default function ScenarioEditor({
                                                       <option value="">
                                                         Select {constantDef.label.toLowerCase()}...
                                                       </option>
-                                                      {options.map((option) => (
+                                                      {staticCatalog.options.map((option) => (
                                                         <option key={option.id} value={option.value}>
                                                           {option.metadata?.symbol ?? option.label}
                                                         </option>
@@ -2885,10 +2902,16 @@ export default function ScenarioEditor({
                     <>
                       <button
                         onClick={handlePlay}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400"
-                        title="Play scenario"
+                        disabled={isStartingPlay}
+                        aria-busy={isStartingPlay}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
+                        title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
                       >
-                        <PlayIcon className="h-6 w-6" />
+                        {isStartingPlay ? (
+                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                        ) : (
+                          <PlayIcon className="h-6 w-6" />
+                        )}
                       </button>
                       <button
                         onClick={downloadScenario}

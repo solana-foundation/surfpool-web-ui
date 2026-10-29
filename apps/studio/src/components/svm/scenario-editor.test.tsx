@@ -21,8 +21,8 @@ vi.mock('@/lib/scenarios-api', async (importOriginal) => ({
 }));
 
 const collateralTemplate = {
-  id: 'phoenix-trader-collateral-stress',
-  name: 'Collateral stress',
+  id: 'trader-collateral-field',
+  name: 'Collateral field',
   protocol: 'Phoenix Eternal',
   description: 'Set collateral',
   accountType: 'Trader',
@@ -52,6 +52,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const stepAction = (template: any, account: unknown = template.address, overrides: Record<string, unknown> = {}) => ({
+  protocolId: 'phoenix-eternal',
+  actionId: template.id,
+  protocol: 'Phoenix Eternal',
+  action: template.name,
+  account,
+  overrides,
+});
+
+const renderEditor = (...actions: ReturnType<typeof stepAction>[]) =>
+  render(
+    <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
+  );
+
 async function openEditor(
   template: any = collateralTemplate,
   values: Record<string, unknown> = {},
@@ -61,115 +75,68 @@ async function openEditor(
     ok: true,
     json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
   }));
-  render(
-    <ScenarioEditor
-      scenarioId="precision-test"
-      initialSteps={[
-        {
-          id: 'slot',
-          name: 'Slot',
-          type: 'slot',
-          actions: [
-            {
-              protocolId: 'phoenix-eternal',
-              actionId: template.id,
-              protocol: 'Phoenix Eternal',
-              action: template.name,
-              account,
-              overrides: values,
-            },
-          ],
-        },
-      ]}
-    />
-  );
+  renderEditor(stepAction(template, account, values));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
 }
 
-it.each(['-9007199254740993', '9223372036854775807'])(
-  'preserves exact collateral %s when editing and saving an IDL field',
-  async (target) => {
-    await openEditor(collateralTemplate, { 'traderState.quoteLotCollateral': '1' });
-    fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), {
-      target: { value: target },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-      expect(patch).toBeDefined();
-      expect(JSON.parse(patch![1].body).overrides[0].values['traderState.quoteLotCollateral']).toBe(target);
-    });
-  }
-);
+const savedOverride = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
+  const patch = await waitFor(() => {
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(call).toBeDefined();
+    return call!;
+  });
+  return JSON.parse(patch[1].body).overrides[0];
+};
 
-it('keeps the saved market visible when the live catalog is unavailable', async () => {
-  const template = {
-    ...collateralTemplate,
-    id: 'phoenix-direct-mark-risk-shock',
-    name: 'Mark shock',
-    accountType: 'Market',
-    properties: [{ path: 'symbol', type: 'dynamic_ref', source: 'list_phoenix_markets' }],
-    idl: { types: [{ name: 'Market', type: { kind: 'struct', fields: [{ name: 'symbol', type: 'string' }] } }] },
-  };
-  await openEditor(template, { symbol: 'SOL' });
-  expect(await screen.findByLabelText('symbol')).toHaveValue('Custom · SOL');
+const pda = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { propertyRef: 'mint' }] } };
+const mints = [
+  { id: 'old', label: 'Old', value: 'OldMint' },
+  { id: 'new', label: 'New', value: 'NewMint' },
+];
+const mintTemplate = {
+  ...collateralTemplate,
+  id: 'pump-bonding-curve-custom',
+  address: pda,
+  properties: [{ path: 'mint', type: 'constant_ref', constant: 'mints' }],
+  constants: { mints: { label: 'Mint', options: mints } },
+};
+
+it('re-derives the address of a PDA template after a seed edit, even over a saved pubkey', async () => {
+  await openEditor(mintTemplate, { mint: 'OldMint' }, { pubkey: 'OldPool' });
+  fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'NewMint' } });
+  expect(await savedOverride()).toMatchObject({ account: pda, values: { mint: 'NewMint' } });
 });
 
-it('keeps the address a saved override was created against when updating it', async () => {
-  const template = { ...collateralTemplate, address: { pubkey: 'template-map' } };
-  await openEditor(template, { 'traderState.quoteLotCollateral': '1' }, { pubkey: 'live-map' });
-  fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), {
-    target: { value: '2' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+it('reads a saved PDA action from the account it was saved with', async () => {
+  await openEditor(mintTemplate, { mint: 'OldMint' }, { pubkey: 'OldPool' });
   await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].account).toEqual({ pubkey: 'live-map' });
+    const read = fetchMock.mock.calls.find(
+      ([, init]) => typeof init?.body === 'string' && JSON.parse(init.body).method === 'getAccountInfo'
+    );
+    expect(read && JSON.parse(read[1].body).params[0]).toBe('OldPool');
   });
 });
 
-it('rebuilds a saved derived (PDA) address from the template when updating it', async () => {
-  const pda = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { propertyRef: 'mint' }] } };
-  const template = { ...collateralTemplate, address: pda };
-  const resolvedSeeds = { pda: { programId: 'pool-program', seeds: [{ string: 'pool' }, { pubkey: 'OldMint' }] } };
-  await openEditor(template, { 'traderState.quoteLotCollateral': '1' }, resolvedSeeds);
-  fireEvent.change(await screen.findByPlaceholderText('Enter quoteLotCollateral...'), {
-    target: { value: '2' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].account).toEqual(pda);
-  });
-});
-
-it('keeps numeric inputs for other IDL templates unchanged', async () => {
-  await openEditor({ ...collateralTemplate, id: 'other-collateral' }, { 'traderState.quoteLotCollateral': 1 });
-  const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');
-  expect(input).toHaveAttribute('type', 'number');
-  fireEvent.change(input, { target: { value: '2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].values['traderState.quoteLotCollateral']).toBe(2);
-  });
+it('selects a saved value a small static catalog lacks as its custom option, showing the value', async () => {
+  await openEditor(mintTemplate, { mint: 'CustomMint' });
+  const select = await screen.findByRole('combobox');
+  expect(select).toHaveValue('CustomMint');
+  expect(select).toHaveDisplayValue('Custom · CustomMint');
 });
 
 const marketTemplates = [
   {
-    name: 'Direct mark',
-    id: 'phoenix-direct-mark-risk-shock',
+    name: 'Market move',
+    id: 'phoenix-market-move',
     prices: ['target_ticks'],
   },
   {
-    name: 'Maintenance margin',
-    id: 'phoenix-maintenance-margin-stress',
-    prices: ['maintenance_risk_factor_bps'],
+    name: 'Risk factors',
+    id: 'phoenix-market-risk-factors',
+    prices: ['maintenanceRiskFactor'],
   },
 ];
 
@@ -195,93 +162,83 @@ const marketTemplate = (market: (typeof marketTemplates)[number]) => ({
   },
 });
 
-for (const market of marketTemplates) {
-  it('edits and saves ' + market.name + ' using input template fields', async () => {
-    const template = marketTemplate(market);
-    const values: Record<string, string> = { symbol: 'SOL' };
-    for (const name of market.prices) values[name] = '1';
-    await openEditor(template, values, { pubkey: 'saved-map' });
-    const target = '18446744073709551615';
-    for (const name of market.prices) {
-      const input = await screen.findByPlaceholderText(`Enter ${name}...`);
-      expect(input).toHaveAttribute('type', 'text');
-      fireEvent.change(input, { target: { value: target } });
-      values[name] = target;
-    }
-    expect(await screen.findByLabelText('symbol')).toHaveValue('Custom · SOL');
-    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-      expect(patch).toBeDefined();
-      const override = JSON.parse(patch![1].body).overrides[0];
-      expect(override.templateId).toBe(market.id);
-      expect(override.account).toEqual({ pubkey: 'saved-map' });
-      expect(override.values).toEqual(values);
-    });
-  });
-}
+it.each(marketTemplates)('edits and saves $name using input template fields', async (market) => {
+  const template = marketTemplate(market);
+  const values: Record<string, string> = { symbol: 'SOL' };
+  for (const name of market.prices) values[name] = '1';
+  await openEditor(template, values, { pubkey: 'saved-map' });
+  const target = '18446744073709551615';
+  for (const name of market.prices) {
+    const input = await screen.findByPlaceholderText(`Enter ${name}...`);
+    expect(input).toHaveAttribute('type', 'text');
+    fireEvent.change(input, { target: { value: target } });
+    values[name] = target;
+  }
+  expect(await screen.findByLabelText('symbol')).toHaveValue('Custom · SOL');
+  const override = await savedOverride();
+  expect(override.templateId).toBe(market.id);
+  expect(override.account).toEqual({ pubkey: 'template-map' });
+  expect(override.values).toEqual(values);
+});
 
 const rpcParams = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body).params);
-const rpcAccounts = () => rpcParams().map(([account]) => account);
 
-it('fetches the saved account when reopening a saved override', async () => {
-  const template = { ...collateralTemplate, address: { pubkey: 'template-trader' } };
-  await openEditor(template, {}, { pubkey: 'saved-trader' });
-  await waitFor(() => expect(rpcAccounts()).toEqual(['saved-trader']));
-});
-
-it('reads the account of a template with IDL fields as parsed JSON', async () => {
-  await openEditor();
+it('reads the own account of a fixed-address template with IDL fields as parsed JSON', async () => {
+  await openEditor(collateralTemplate, {}, { pubkey: 'saved-trader' });
   await waitFor(() => expect(rpcParams()).toEqual([['trader', { commitment: 'confirmed', encoding: 'jsonParsed' }]]));
 });
 
-for (const market of marketTemplates) {
-  it('sends only the inputs of a newly selected ' + market.name + ' action', async () => {
-    const template = marketTemplate(market);
-    vi.mocked(fetchDynamicRefOptions).mockResolvedValue([{ value: 'SOL', address: 'solOrderbook' }]);
-    await openEditor(template);
-    // As on a surfnet with the Phoenix IDL: jsonParsed decodes the map, base64 returns its bytes.
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      const config = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params[1] : undefined;
-      const data =
-        config?.encoding === 'jsonParsed'
-          ? { parsed: { numAssets: 90, padding0: [0, 0, 0, 0, 0, 0] } }
-          : ['', 'base64'];
-      return { ok: true, json: async () => ({ result: { value: { data } } }) };
-    });
-
-    fireEvent.click(await screen.findByRole('heading', { name: template.name }));
-    fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
-    const values: Record<string, string> = { symbol: 'SOL' };
-    for (const name of market.prices) {
-      fireEvent.change(await screen.findByPlaceholderText(`Enter ${name}...`), { target: { value: '1' } });
-      values[name] = '1';
-    }
-    fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-      expect(patch).toBeDefined();
-      expect(JSON.parse(patch![1].body).overrides[0].values).toEqual(values);
-    });
-    expect(rpcParams().at(-1)).toEqual([
-      'template-map',
-      { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
-    ]);
+it('keeps the trader of a dialog-created collateral override when it is saved from the editor', async () => {
+  const trader = 'HB66UQf7Bv82q9VPhg9Hz6RcDaTMY1yJm8KVDA8VG7Gp';
+  const template = {
+    ...collateralTemplate,
+    id: 'phoenix-trader-collateral',
+    name: 'Phoenix Trader Collateral',
+    address: { pubkey: '' },
+    properties: [{ path: 'effective_collateral_usdc', type: 'input', value_type: 'string' }],
+  };
+  await openEditor(template, { effective_collateral_usdc: '1000' }, { pubkey: trader });
+  await waitFor(() =>
+    expect(rpcParams()).toEqual([
+      [trader, { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }],
+    ])
+  );
+  fireEvent.change(await screen.findByPlaceholderText('Enter effective_collateral_usdc...'), {
+    target: { value: '2000' },
   });
-}
-
-const savedSymbol = async () => {
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  let symbol: unknown;
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    symbol = JSON.parse(patch![1].body).overrides[0].values.symbol;
+  expect(await savedOverride()).toMatchObject({
+    account: { pubkey: trader },
+    values: { effective_collateral_usdc: '2000' },
   });
-  return symbol;
-};
+});
+
+it.each(marketTemplates)('sends only the inputs of a newly selected $name action', async (market) => {
+  const template = marketTemplate(market);
+  vi.mocked(fetchDynamicRefOptions).mockResolvedValue([{ value: 'SOL', address: 'solOrderbook' }]);
+  await openEditor(template);
+  // As on a surfnet with the Phoenix IDL: jsonParsed decodes the map, base64 returns its bytes.
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const config = url === 'http://rpc' ? JSON.parse(`${init?.body}`).params[1] : undefined;
+    const data =
+      config?.encoding === 'jsonParsed' ? { parsed: { numAssets: 90, padding0: [0, 0, 0, 0, 0, 0] } } : ['', 'base64'];
+    return { ok: true, json: async () => ({ result: { value: { data } } }) };
+  });
+
+  fireEvent.click(await screen.findByRole('heading', { name: template.name }));
+  fireEvent.click(await screen.findByRole('button', { name: 'SOL' }));
+  const values: Record<string, string> = { symbol: 'SOL' };
+  for (const name of market.prices) {
+    fireEvent.change(await screen.findByPlaceholderText(`Enter ${name}...`), { target: { value: '1' } });
+    values[name] = '1';
+  }
+
+  expect((await savedOverride()).values).toEqual(values);
+  expect(rpcParams().at(-1)).toEqual([
+    'template-map',
+    { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
+  ]);
+});
 
 it('picks the listed market a template field is given by symbol in any case or by orderbook address', async () => {
   const amat = 'AvPTRe4XjC1xdVhwzUiVwDDfqrqm6eVaKMAnS39raEjW';
@@ -299,7 +256,7 @@ it('picks the listed market a template field is given by symbol in any case or b
   expect(comboboxResults('symbol')).toEqual(['AMAT']);
   fireEvent.click(screen.getByRole('button', { name: 'AMAT' }));
 
-  expect(await savedSymbol()).toBe('AMAT');
+  expect((await savedOverride()).values.symbol).toBe('AMAT');
 });
 
 it('keeps a value a template field has no option for as a custom value', async () => {
@@ -315,7 +272,7 @@ it('keeps a value a template field has no option for as a custom value', async (
   expect(comboboxResults('symbol')).toEqual([`Custom · ${unlisted}`]);
   fireEvent.click(screen.getByRole('button', { name: `Custom · ${unlisted}` }));
 
-  expect(await savedSymbol()).toBe(unlisted);
+  expect((await savedOverride()).values.symbol).toBe(unlisted);
 });
 
 it('ignores an older account response that resolves after a newer selection', async () => {
@@ -337,28 +294,7 @@ it('ignores an older account response that resolves after a newer selection', as
       });
     });
   });
-  render(
-    <ScenarioEditor
-      scenarioId="stale-test"
-      initialSteps={[
-        {
-          id: 'slot',
-          name: 'Slot',
-          type: 'slot',
-          actions: [
-            {
-              protocolId: 'phoenix-eternal',
-              actionId: collateralTemplate.id,
-              protocol: 'Phoenix Eternal',
-              action: collateralTemplate.name,
-              account: { pubkey: 'a' },
-              overrides: {},
-            },
-          ],
-        },
-      ]}
-    />
-  );
+  renderEditor(stepAction(collateralTemplate));
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${collateralTemplate.name}`));
   fireEvent.click(await screen.findByText(collateralTemplate.name));
   await waitFor(() => expect(pending).toHaveLength(1));
@@ -368,7 +304,7 @@ it('ignores an older account response that resolves after a newer selection', as
   await waitFor(() => expect(pending).toHaveLength(2));
   fireEvent.click(screen.getByRole('heading', { name: collateralTemplate.name }));
   await waitFor(() => expect(pending).toHaveLength(3));
-  expect(pending.map(({ account }) => account)).toEqual(['a', 'b', 'trader']);
+  expect(pending.map(({ account }) => account)).toEqual(['trader', 'b', 'trader']);
 
   pending[2].resolve(3);
   const collateral = () => (screen.getByPlaceholderText('Enter quoteLotCollateral...') as HTMLInputElement).value;
@@ -379,31 +315,20 @@ it('ignores an older account response that resolves after a newer selection', as
 });
 
 it('keeps the later of two saved overrides reopened before the first one loaded', async () => {
+  // Only a template without an address reads the account each saved override was created for.
+  const traderTemplate = { ...collateralTemplate, address: { pubkey: '' } };
   let releaseFirst = () => {};
   const firstLoaded = new Promise<void>((resolve) => (releaseFirst = resolve));
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (String(init?.body).includes('first-trader')) await firstLoaded;
     return {
       ok: true,
-      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { value: null } }),
+      json: async () => (url.endsWith('/templates') ? [traderTemplate] : { result: { value: null } }),
     };
   });
-  const saved = (pubkey: string, collateral: string) => ({
-    protocolId: 'phoenix-eternal',
-    actionId: collateralTemplate.id,
-    protocol: 'Phoenix Eternal',
-    action: collateralTemplate.name,
-    account: { pubkey },
-    overrides: { 'traderState.quoteLotCollateral': collateral },
-  });
-  render(
-    <ScenarioEditor
-      scenarioId="race-test"
-      initialSteps={[
-        { id: 'slot', name: 'Slot', type: 'slot', actions: [saved('first-trader', '1'), saved('second-trader', '2')] },
-      ]}
-    />
-  );
+  const saved = (pubkey: string, collateral: string) =>
+    stepAction(traderTemplate, { pubkey }, { 'traderState.quoteLotCollateral': collateral });
+  renderEditor(saved('first-trader', '1'), saved('second-trader', '2'));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   const savedAction = async (index: number) => (await screen.findAllByText(collateralTemplate.name))[index];
   // The first click selects the slot, the next ones reopen a saved override.
@@ -412,9 +337,43 @@ it('keeps the later of two saved overrides reopened before the first one loaded'
   await waitFor(() => expect(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).toContain('first-trader'));
   fireEvent.click(await savedAction(1));
   const input = await screen.findByPlaceholderText('Enter quoteLotCollateral...');
-  await waitFor(() => expect(input).toHaveValue('2'));
+  await waitFor(() => expect(input).toHaveValue(2));
 
   releaseFirst();
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue('2');
+  expect(screen.getByPlaceholderText('Enter quoteLotCollateral...')).toHaveValue(2);
+});
+
+it('steps forward to the slot after the processed one, which surfnet reads ahead of the finalized default', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+    if (body.method === 'getEpochInfo') {
+      const absoluteSlot = body.params?.[0]?.commitment === 'processed' ? 663 : 632;
+      return { ok: true, json: async () => ({ result: { absoluteSlot } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { value: null } }),
+    };
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="editor-test"
+      initialSteps={[0, 1].map((height) => ({
+        id: `slot-${height}`,
+        name: `Slot ${height}`,
+        type: 'slot',
+        actions: [stepAction(collateralTemplate)],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  fireEvent.click(await screen.findByTitle('Step forward'));
+
+  await waitFor(() => {
+    const travel = fetchMock.mock.calls
+      .map(([, init]) => (typeof init?.body === 'string' ? JSON.parse(init.body) : {}))
+      .find((body) => body.method === 'surfnet_timeTravel');
+    expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
+  });
 });

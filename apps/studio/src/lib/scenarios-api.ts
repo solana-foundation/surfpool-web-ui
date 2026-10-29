@@ -221,7 +221,7 @@ export async function createPumpSwapPriceShockScenario(
 async function callMcpToolJson<T>(
   studioUrl: string,
   toolName: string,
-  args: Record<string, string>
+  args: Record<string, unknown>
 ): Promise<T | undefined> {
   const { sessionId } = await fetchMCPTools(studioUrl);
   const result = (await callMCPTool(studioUrl, toolName, args, sessionId)) as {
@@ -256,94 +256,102 @@ export type PhoenixScenarioResult = {
   id: string;
 };
 
-export async function createPhoenixCollateralScenario(
-  studioUrl: string,
-  trader: string,
-  targetQuoteLots: string
-): Promise<PhoenixScenarioResult> {
-  return createScenarioWithMcp(studioUrl, 'create_phoenix_collateral_scenario', {
-    trader: trader.trim(),
-    targetQuoteLots: targetQuoteLots.trim(),
-  });
-}
-
-async function phoenixMarketTemplate(studioUrl: string, templateId: string): Promise<ScenarioTemplate> {
-  const response = await fetch(`${studioUrl}/v1/scenarios/templates`);
-  if (!response.ok) {
-    throw new Error(`Failed to load scenario templates: ${response.status}`);
-  }
-
-  const templates = (await response.json()) as ScenarioTemplate[];
-  const template = findScenarioTemplate(templates, templateId);
-  if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
-
-  return template;
-}
-
+/** One option of a `dynamic_ref` property: a market's symbol, its orderbook and the extra fields its source adds. */
 export interface DynamicRefOption {
   value: string;
   address?: string;
   markTicks?: number;
   tickSize?: number;
   baseLotDecimals?: number;
+  backstopRiskFactorBps?: number;
 }
 
-interface DynamicRefPayload {
-  error?: string | null;
-  symbols?: string[];
-  markets?: ({ symbol: string; orderbook?: string } & Omit<DynamicRefOption, 'value' | 'address'>)[];
-}
+type DynamicRefSourceMarket = { symbol: string; orderbook: string } & Omit<DynamicRefOption, 'value' | 'address'>;
 
-/** Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. */
-export async function fetchDynamicRefOptions(studioUrl: string, source: string): Promise<DynamicRefOption[]> {
+/** What the MCP tool named in a `dynamic_ref` source returns: its markets, or an error. */
+type DynamicRefSourceResult = { markets: DynamicRefSourceMarket[]; error?: null } | { error: string };
+
+// Without a port the MCP tools read 127.0.0.1:8899, which may not be the surfnet Studio runs on.
+const surfnetPortArg = (rpcUrl: string): { surfnetPort?: number } => {
   try {
-    const payload = await callMcpToolJson<DynamicRefPayload>(studioUrl, source, {});
-    if (!payload || payload.error) return [];
-    if (payload.markets) {
-      return payload.markets.map(({ symbol, orderbook, ...market }) => ({
-        value: symbol,
-        address: orderbook,
-        ...market,
-      }));
-    }
-    return (payload.symbols ?? []).map((value) => ({ value }));
+    const port = Number(new URL(rpcUrl).port);
+    return port > 0 ? { surfnetPort: port } : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Options for a `dynamic_ref` property, read live from the MCP tool named in its `source`. Every source
+ * tool returns `{ markets: [{ symbol, orderbook, ...extra }] }` or `{ error }`, as `list_phoenix_markets`
+ * does. Each market becomes an option valued by its symbol, with its orderbook as the address and the
+ * extra fields kept. An error, or a tool that cannot be reached, gives no options.
+ */
+export async function fetchDynamicRefOptions(
+  studioUrl: string,
+  rpcUrl: string,
+  source: string
+): Promise<DynamicRefOption[]> {
+  try {
+    const payload = await callMcpToolJson<DynamicRefSourceResult>(studioUrl, source, surfnetPortArg(rpcUrl));
+    if (!payload || typeof payload.error === 'string') return [];
+    return (payload.markets ?? []).map(({ symbol, orderbook, ...market }) => ({
+      value: symbol,
+      address: orderbook,
+      ...market,
+    }));
   } catch {
     return [];
   }
 }
 
+interface PhoenixOverride {
+  templateId: string;
+  label: string;
+  values: Record<string, string>;
+  account?: string;
+  slot?: number;
+}
+
 /**
- * The market templates carry the perp asset map address, so these scenarios are built here and
- * posted to the generic API; only collateral stress needs a tool, which reads the Trader from the surfnet.
+ * Phoenix scenarios are built here and posted to the generic API. A market template carries the
+ * perp asset map address; a trader template targets the Trader account it is given.
  */
-async function createPhoenixMarketScenario(
+async function createPhoenixScenario(
   studioUrl: string,
-  templateId: string,
   name: string,
   description: string,
-  label: string,
   tags: string[],
-  values: Record<string, string>
+  overrides: PhoenixOverride[]
 ): Promise<PhoenixScenarioResult> {
-  const template = await phoenixMarketTemplate(studioUrl, templateId);
+  const templatesResponse = await fetch(`${studioUrl}/v1/scenarios/templates`);
+  if (!templatesResponse.ok) {
+    throw new Error(`Failed to load scenario templates: ${templatesResponse.status}`);
+  }
+
+  const templates = (await templatesResponse.json()) as ScenarioTemplate[];
+
   const scenario = {
     id: crypto.randomUUID(),
     name,
     description,
-    overrides: [
-      {
+    // Overrides in one slot apply in this order.
+    overrides: overrides.map(({ templateId, label, values, account, slot = 0 }) => {
+      const template = findScenarioTemplate(templates, templateId);
+      if (!template) throw new Error(`Phoenix template ${templateId} is unavailable`);
+      return {
         id: crypto.randomUUID(),
         templateId: template.id,
         values,
-        scenarioRelativeSlot: 0,
+        scenarioRelativeSlot: slot,
         label,
         enabled: true,
-        // A stale map fails Phoenix's mark staleness check, so fetch the current one from the
-        // upstream datasource first.
-        fetchBeforeUse: true,
-        account: template.address,
-      },
-    ],
+        // A refetch would reset this account apart from the market's other accounts, and the
+        // dialog's lists already load it into the surfnet.
+        fetchBeforeUse: false,
+        account: account ? { pubkey: account } : template.address,
+      };
+    }),
     tags,
   };
   const body = stringify(scenario);
@@ -365,20 +373,135 @@ async function createPhoenixMarketScenario(
   return { id: result.id };
 }
 
-export async function createPhoenixDirectMarkScenario(
+// A move leaves the resting orders it crosses until the uncross after it matches them.
+const marketMoveOverrides = (symbol: string, targetTicks: string, slot = 0): PhoenixOverride[] => [
+  {
+    templateId: 'phoenix-market-move',
+    label: `Phoenix ${symbol} market move`,
+    values: { symbol, target_ticks: targetTicks },
+    slot,
+  },
+  { templateId: 'phoenix-market-uncross', label: `Phoenix ${symbol} uncross`, values: { symbol }, slot },
+];
+
+export async function createPhoenixMarketMoveScenario(
   studioUrl: string,
   symbol: string,
   targetTicks: string
 ): Promise<PhoenixScenarioResult> {
-  return createPhoenixMarketScenario(
+  return createPhoenixScenario(
     studioUrl,
-    'phoenix-direct-mark-risk-shock',
-    `Phoenix ${symbol.trim()} Direct Mark Risk Shock`,
-    'Set exact mark-price ticks for one market in the Phoenix Eternal PerpAssetMap.',
-    `Phoenix ${symbol.trim()} direct mark risk shock`,
-    ['phoenix-eternal', 'direct-mark', 'risk'],
-    { symbol: symbol.trim(), target_ticks: targetTicks.trim() }
+    `Phoenix ${symbol.trim()} Market Move`,
+    'Move one Phoenix Eternal market to a new price: oracle readings, maker liquidity and the order book together.',
+    ['phoenix-eternal', 'market-move', 'risk'],
+    marketMoveOverrides(symbol.trim(), targetTicks.trim())
   );
+}
+
+export async function createPhoenixOraclePriceScenario(
+  studioUrl: string,
+  symbol: string,
+  targetTicks: string
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(
+    studioUrl,
+    `Phoenix ${symbol.trim()} Oracle Price`,
+    "Set one Phoenix Eternal market's oracle price; the order book and the makers' quotes stay where they are.",
+    ['phoenix-eternal', 'oracle-price', 'risk'],
+    [
+      {
+        templateId: 'phoenix-oracle-price',
+        label: `Phoenix ${symbol.trim()} oracle price`,
+        values: { symbol: symbol.trim(), target_ticks: targetTicks.trim() },
+      },
+    ]
+  );
+}
+
+export interface PhoenixMarketMove {
+  symbol: string;
+  targetTicks: string;
+}
+
+// Phoenix counts USDC in quote lots of a millionth.
+const usdcFromQuoteLots = (quoteLots: string) => {
+  const lots = BigInt(quoteLots);
+  const whole = lots < BigInt(0) ? -lots : lots;
+  const fraction = String(whole % BigInt(1000000)).padStart(6, '0');
+  return `${lots < BigInt(0) ? '-' : ''}${whole / BigInt(1000000)}.${fraction}`;
+};
+
+/**
+ * Sets each trader's effective collateral, given in quote lots. With `moves`, which follow one slot later, each trader
+ * cancels its resting orders first.
+ */
+export async function createPhoenixCollateralLiquidationScenario(
+  studioUrl: string,
+  traders: { trader: string; collateral: string }[],
+  moves: PhoenixMarketMove[] = []
+): Promise<PhoenixScenarioResult> {
+  return createPhoenixScenario(
+    studioUrl,
+    `Phoenix ${traders.length}-Trader ${moves.length ? 'Price-Move' : 'Collateral'} Liquidation`,
+    moves.length
+      ? "Cancel the chosen Phoenix Eternal traders' orders and leave them healthy, then move their markets one slot later so a keeper can liquidate them."
+      : "Lower the chosen Phoenix Eternal traders' effective collateral until a keeper can liquidate them, without moving any price; a keeper force-cancels their risk-increasing orders first.",
+    ['phoenix-eternal', 'liquidation', 'collateral'],
+    [
+      ...traders.flatMap(({ trader, collateral }): PhoenixOverride[] => [
+        // The move would otherwise fill the trader's resting orders and change the positions its collateral is
+        // worked out for.
+        ...(moves.length
+          ? [{ templateId: 'phoenix-trader-cancel-orders', label: 'Phoenix trader cancel orders', values: { trader } }]
+          : []),
+        {
+          templateId: 'phoenix-trader-collateral',
+          label: 'Phoenix trader collateral',
+          values: { effective_collateral_usdc: usdcFromQuoteLots(collateral) },
+          account: trader,
+        },
+      ]),
+      ...moves.flatMap(({ symbol, targetTicks }) => marketMoveOverrides(symbol, targetTicks, 1)),
+    ]
+  );
+}
+
+export interface PhoenixTraderPosition {
+  symbol: string;
+  orderbook: string;
+  side: 'long' | 'short';
+  baseLots: string;
+  maintenanceMarginQuoteLots: string;
+}
+
+type MarginField = 'collateral' | 'effectiveCollateral' | 'maintenanceMargin' | 'backstopMargin' | 'highRiskMargin';
+type PhoenixMargin = Record<MarginField, string> & { liquidatable: boolean };
+
+export interface PhoenixTraderPositions {
+  trader: string;
+  positions: PhoenixTraderPosition[];
+  hot: boolean;
+  margin: PhoenixMargin;
+  marginAfterMoves?: PhoenixMargin;
+  // Why phoenix-trader-cancel-orders or phoenix-trader-collateral would refuse the trader, if one would.
+  refusal?: string | null;
+}
+
+/** A trader's open Phoenix positions and margin, as Phoenix sees them once the trader's resting orders are cancelled. */
+export async function fetchPhoenixTraderPositions(
+  studioUrl: string,
+  rpcUrl: string,
+  trader: string,
+  moves?: PhoenixMarketMove[]
+): Promise<PhoenixTraderPositions> {
+  const payload = await callMcpToolJson<{ error?: string | null } & PhoenixTraderPositions>(
+    studioUrl,
+    'list_phoenix_trader_positions',
+    { trader: trader.trim(), ...(moves && { moves }), ...surfnetPortArg(rpcUrl) }
+  );
+  if (!payload) throw new Error('Surfpool MCP tool list_phoenix_trader_positions returned no result');
+  if (payload.error) throw new Error(payload.error);
+  return payload;
 }
 
 export async function createPhoenixMaintenanceMarginScenario(
@@ -386,14 +509,18 @@ export async function createPhoenixMaintenanceMarginScenario(
   symbol: string,
   riskFactor: string
 ): Promise<PhoenixScenarioResult> {
-  return createPhoenixMarketScenario(
+  return createPhoenixScenario(
     studioUrl,
-    'phoenix-maintenance-margin-stress',
-    `Phoenix ${symbol.trim()} Maintenance Margin Stress`,
+    `Phoenix ${symbol.trim()} Maintenance Margin Factor`,
     'Set the maintenance margin risk factor for one Phoenix Eternal market.',
-    `Phoenix ${symbol.trim()} maintenance margin stress`,
     ['phoenix-eternal', 'maintenance-margin', 'risk'],
-    { symbol: symbol.trim(), maintenance_risk_factor_bps: riskFactor.trim() }
+    [
+      {
+        templateId: 'phoenix-market-risk-factors',
+        label: `Phoenix ${symbol.trim()} maintenance margin factor`,
+        values: { symbol: symbol.trim(), maintenanceRiskFactor: riskFactor.trim() },
+      },
+    ]
   );
 }
 
