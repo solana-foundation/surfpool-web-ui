@@ -369,7 +369,10 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       if (streamingRequestedRef.current) {
         const operation = ++streamOperationRef.current;
         try {
-          if (await subscribeToStream(operation)) setError(null);
+          if (await subscribeToStream(operation)) {
+            setError(null);
+            setIsStreaming(true);
+          }
         } catch (err) {
           console.error('Resubscribing after a reconnect failed:', err);
           if (mountedRef.current && streamingRequestedRef.current && operation === streamOperationRef.current) {

@@ -39,6 +39,38 @@ beforeEach(() => { service = new Service(); state.service = service; });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('normal transaction stream reconnect', () => {
+  for (const stage of ['connect', 'subscribe', 'before startup']) {
+    it(`marks a manual stream running after a disconnect (${stage})`, async () => {
+      let finish!: () => void;
+      if (stage === 'connect') {
+        service.connect.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+      } else if (stage === 'subscribe') {
+        service.subscribeToTransactions.mockImplementationOnce(() => new Promise<string>(resolve => {
+          finish = () => { service.active.add('stale'); resolve('stale'); };
+        }));
+      }
+      const hook = mount({ autoStart: false });
+      if (stage === 'before startup') act(() => { service.emit('disconnected'); });
+      act(() => { void hook.result.current.startStreaming(); });
+      await act(flush);
+      if (stage !== 'before startup') {
+        await act(async () => {
+          service.active.clear();
+          service.emit('disconnected'); service.emit('connected'); await flush();
+          finish(); await flush();
+        });
+      }
+      expect(service.active.size).toBe(1);
+      expect(service.active.has('stale')).toBe(false);
+      expect(hook.result.current.isStreaming).toBe(true);
+      const subscriptions = service.subscribeToTransactions.mock.calls.length;
+      act(() => hook.result.current.toggleStreaming());
+      expect(hook.result.current.isStreaming).toBe(false);
+      expect(service.active.size).toBe(0);
+      expect(service.subscribeToTransactions).toHaveBeenCalledTimes(subscriptions);
+    });
+  }
+
   for (const stage of ['connect', 'subscribe']) {
     for (const autoStart of [true, false]) {
       it(`preserves a pending ${stage} across RPC refresh (autoStart=${autoStart})`, async () => {
@@ -128,6 +160,7 @@ describe('normal transaction stream reconnect', () => {
       else hook.unmount();
       await act(async () => { finish('late'); await flush(); });
       expect(service.active.has('late')).toBe(false);
+      if (close === 'stop') expect(hook.result.current.isStreaming).toBe(false);
     });
   }
 });
