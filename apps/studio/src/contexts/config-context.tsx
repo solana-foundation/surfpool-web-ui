@@ -47,7 +47,6 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     try {
       setLoading(true)
       setError(null)
-      setInvalidMetadata(false)
       
       // Try local /config endpoint first
       let response = await fetch('/config', { signal: controller.signal })
@@ -73,7 +72,10 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
         throw new Error('Invalid historical Surfpool configuration; reload after checking the server build')
       }
       logger.log('📋 Config loaded:', data)
-      if (request.current === controller) setConfig(data)
+      if (request.current === controller) {
+        setConfig(data)
+        setInvalidMetadata(false)
+      }
     } catch (err) {
       if (request.current !== controller) return
       const errorMessage = controller.signal.aborted

@@ -66,6 +66,28 @@ it('keeps an already mounted dashboard and its edits during recovery', async () 
   expect(screen.getByLabelText('draft')).toBe(input);
 });
 
+it('keeps a valid dashboard and its edits mounted during configuration refresh', async () => {
+  let finish!: (response: unknown) => void;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const configured = { ok: true, json: async () => ({
+    rpc_url: 'http://127.0.0.1:29111', ws_url: 'ws://127.0.0.1:29112',
+    rpc_datasource_url: null, studio_url: 'http://127.0.0.1:29113',
+  }) };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(configured).mockReturnValueOnce(pending));
+  function Consumer() {
+    const { refetch } = useConfig();
+    return <><input aria-label="draft" /><button onClick={refetch}>Refresh</button></>;
+  }
+  render(<ConfigProvider><Consumer /></ConfigProvider>);
+  const input = await screen.findByLabelText('draft');
+  fireEvent.change(input, { target: { value: 'unsaved edit' } });
+  fireEvent.click(screen.getByText('Refresh'));
+  expect(screen.getByLabelText('draft')).toBe(input);
+  await act(async () => { finish(configured); });
+  expect(screen.getByLabelText('draft')).toBe(input);
+  expect(input).toHaveValue('unsaved edit');
+});
+
 for (const fallback of [false, true]) {
   it(`bounds a stalled ${fallback ? 'fallback' : 'local'} configuration fetch`, async () => {
     vi.useFakeTimers();

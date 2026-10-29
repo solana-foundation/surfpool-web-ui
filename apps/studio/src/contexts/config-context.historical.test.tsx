@@ -1,5 +1,6 @@
 import { useAppConfig } from '@/hooks/use-app-config';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ConfigProvider } from './config-context';
 
@@ -22,7 +23,7 @@ function mount(value: unknown) {
 }
 
 beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 it('uses explicit metadata and never a current-tip datasource for historical mode', async () => {
   vi.stubEnv('NEXT_PUBLIC_RPC_DATASOURCE_URL', 'https://example.invalid/tip');
@@ -55,4 +56,76 @@ it.each([false, 3, [], {}, { after: 123 }, { after: '' }, { after: '  ' }].map(h
 it('accepts an explicit null historical field as normal mode', async () => {
   mount({ ...normal, historical: null });
   expect(await screen.findByTestId('status')).toHaveTextContent('"historical":false');
+});
+
+for (const outcome of ['valid', 'invalid', 'unavailable', 'http-error', 'timeout']) {
+  it(`keeps connecting consumers gated during configuration retry (${outcome})`, async () => {
+    let finish!: (response: unknown) => void;
+    let fail!: (error: Error) => void;
+    const pending = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+    const invalid = { ...normal, historical: { after: '' } };
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => invalid })
+      .mockImplementationOnce((_url: unknown, options?: RequestInit) => {
+        options?.signal?.addEventListener('abort', () => fail(new DOMException('Aborted', 'AbortError')));
+        return pending;
+      })
+      .mockResolvedValue({ ok: false, status: 503 }));
+    const mounted: string[] = [];
+    function Consumer() {
+      const { rpcUrl, historical, rpcDatasourceUrl } = useAppConfig();
+      useEffect(() => { mounted.push(rpcUrl); }, []);
+      return <span data-testid="consumer">{JSON.stringify({ rpcUrl, historical, source: rpcDatasourceUrl })}</span>;
+    }
+    render(<ConfigProvider><Consumer /></ConfigProvider>);
+    await screen.findByRole('alert');
+    if (outcome === 'timeout') vi.useFakeTimers();
+    fireEvent.click(screen.getByText('Retry configuration'));
+    const mountedDuringRetry = [...mounted];
+    const gatedDuringRetry = screen.queryByTestId('consumer') === null;
+    await act(async () => {
+      if (outcome === 'timeout') await vi.advanceTimersByTimeAsync(10_000);
+      else if (outcome === 'unavailable') fail(new Error('Server unavailable'));
+      else if (outcome === 'http-error') finish({ ok: false, status: 503 });
+      else finish({ ok: true, json: async () => outcome === 'valid'
+        ? { ...normal, historical: { after: '413023260' } } : invalid });
+    });
+    expect(mountedDuringRetry).toEqual([]);
+    expect(gatedDuringRetry).toBe(true);
+    if (outcome === 'valid') {
+      expect(screen.getByTestId('consumer')).toHaveTextContent(normal.rpc_url);
+      expect(screen.getByTestId('consumer')).toHaveTextContent('"historical":true');
+      expect(screen.getByTestId('consumer')).toHaveTextContent('"source":null');
+      expect(mounted).toEqual([normal.rpc_url]);
+    } else {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(mounted).toEqual([]);
+    }
+  });
+}
+
+it('ignores an older valid retry while newer configuration remains pending', async () => {
+  let older!: (response: unknown) => void;
+  let latest!: (response: unknown) => void;
+  const oldReply = new Promise(resolve => { older = resolve; });
+  const newReply = new Promise(resolve => { latest = resolve; });
+  const response = (rpc: string) => ({ ok: true, json: async () => ({
+    ...normal, rpc_url: rpc, historical: { after: '413023260' },
+  }) });
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ ...normal, historical: {} }) })
+    .mockReturnValueOnce(oldReply).mockReturnValueOnce(newReply));
+  render(<ConfigProvider><Status /></ConfigProvider>);
+  await screen.findByRole('alert');
+  try {
+    fireEvent.click(screen.getByText('Retry configuration'));
+    fireEvent.click(screen.getByText('Retry configuration'));
+    await act(async () => { older(response('http://old.invalid')); });
+    expect(screen.queryByTestId('status')).not.toBeInTheDocument();
+    await act(async () => { latest(response(normal.rpc_url)); });
+    expect(screen.getByTestId('status')).toHaveTextContent('"historical":true');
+    expect(screen.getByTestId('status')).toHaveTextContent('"source":null');
+  } finally {
+    await act(async () => { older(response('http://old.invalid')); latest(response(normal.rpc_url)); });
+  }
 });
