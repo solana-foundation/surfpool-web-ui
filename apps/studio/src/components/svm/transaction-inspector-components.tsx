@@ -1,6 +1,6 @@
 'use client';
 
-import { computeHexDiff, getProgramType } from '@/lib/transaction-inspector-utils';
+import { computeHexDiff, escapeHtmlText, getProgramType } from '@/lib/transaction-inspector-utils';
 import React, { useEffect, useMemo, useRef } from 'react';
 import AddressDisplay from './address-display';
 import TokenAmountDisplay from './token-amount-display';
@@ -111,7 +111,7 @@ export const DataDisplay: React.FC<DataDisplayProps> = ({
       // Only update if the JSON string actually changed
       if (lastJsonStringRef.current !== jsonString) {
         lastJsonStringRef.current = jsonString;
-        prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
+        prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${escapeHtmlText(jsonString)}</pretty-json>`;
       }
     }
   }, [jsonString, address, context, getAccountViewMode]);
@@ -536,7 +536,7 @@ export const DataComparison: React.FC<DataComparisonProps> = ({
         if (jsonString === '<none>') {
           prettyJsonRef.current.innerHTML = '<div class="text-gray-500 text-xs italic">No data</div>';
         } else {
-          prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${jsonString}</pretty-json>`;
+          prettyJsonRef.current.innerHTML = `<pretty-json expand="2" class="font-mono text-xs" style="--key-color: #60a5fa; --arrow-color: #6b7280; --brace-color: #6b7280; --bracket-color: #6b7280; --string-color: #a855f7; --number-color: #f59e0b; --null-color: #6b7280; --boolean-color: #f59e0b; --comma-color: #6b7280; --ellipsis-color: #6b7280; --indent: 1rem; --font-family: monospace; --font-size: 0.75rem;">${escapeHtmlText(jsonString)}</pretty-json>`;
         }
       }
     }
