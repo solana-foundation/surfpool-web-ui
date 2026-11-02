@@ -1,6 +1,6 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
 
@@ -376,4 +376,202 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+const rpcCalls = () =>
+  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body));
+
+it('plays one column per produced slot: the first at Play, the next on each step', async () => {
+  const column = (id: string) => ({
+    id,
+    name: 'Slot',
+    type: 'slot' as const,
+    actions: [
+      {
+        protocolId: 'phoenix-eternal',
+        actionId: collateralTemplate.id,
+        protocol: 'Phoenix Eternal',
+        action: collateralTemplate.name,
+        account: collateralTemplate.address,
+        overrides: { 'traderState.quoteLotCollateral': id },
+      },
+    ],
+  });
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="columns" initialSteps={[column('1'), column('2')]} />);
+
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() =>
+    expect(rpcCalls().map((call) => call.method)).toEqual([
+      'surfnet_registerScenario',
+      'surfnet_pauseClock',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+  const [first] = rpcCalls();
+  expect(first.params[0].name).toBe('Scenario · column 1/2');
+  expect(first.params[0].overrides).toHaveLength(1);
+  expect(first.params[0].overrides[0]).toMatchObject({
+    scenarioRelativeSlot: 0,
+    values: { 'traderState.quoteLotCollateral': '1' },
+  });
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() =>
+    expect(
+      rpcCalls()
+        .map((call) => call.method)
+        .slice(4)
+    ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel'])
+  );
+  const [, , , , second, , timeTravel] = rpcCalls();
+  expect(second.params[0].name).toBe('Scenario · column 2/2');
+  expect(second.params[0].overrides).toHaveLength(1);
+  expect(second.params[0].overrides[0]).toMatchObject({
+    scenarioRelativeSlot: 0,
+    values: { 'traderState.quoteLotCollateral': '2' },
+  });
+  expect(timeTravel.params).toEqual([{ absoluteSlot: 501 }]);
+});
+
+it('stays in read mode and never pauses the clock when the first column is rejected', async () => {
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () =>
+      url.endsWith('/templates')
+        ? [collateralTemplate]
+        : { error: { code: -32602, message: 'base slot 500 is already produced; the next slot is 501' } },
+  }));
+  renderEditor(stepAction(collateralTemplate));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls().map((call) => call.method)).toEqual(['surfnet_registerScenario']));
+  expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+});
+
+it('retries a step whose time travel failed without registering the column again', async () => {
+  const column = (id: string) => ({
+    id,
+    name: 'Slot',
+    type: 'slot' as const,
+    actions: [
+      {
+        protocolId: 'phoenix-eternal',
+        actionId: collateralTemplate.id,
+        protocol: 'Phoenix Eternal',
+        action: collateralTemplate.name,
+        account: collateralTemplate.address,
+        overrides: { 'traderState.quoteLotCollateral': id },
+      },
+    ],
+  });
+  let failNextTimeTravel = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failNextTimeTravel) {
+      failNextTimeTravel = false;
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="retry" initialSteps={[column('1'), column('2')]} />);
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  failNextTimeTravel = true;
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(7));
+  expect(await screen.findByTitle('Step forward')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(9));
+  expect(
+    rpcCalls()
+      .map((call) => call.method)
+      .slice(4)
+  ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
+});
+
+it('registers the first column again on the next Play after Play cannot advance', async () => {
+  let failTimeTravel = true;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failTimeTravel) {
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  renderEditor(stepAction(collateralTemplate));
+
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+  failTimeTravel = false;
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() =>
+    expect(
+      rpcCalls()
+        .map((call) => call.method)
+        .slice(4)
+    ).toEqual(['surfnet_registerScenario', 'surfnet_pauseClock', 'getEpochInfo', 'surfnet_timeTravel'])
+  );
+});
+
+it('ignores a second Step and keeps Stop disabled while the first one is still registering its column', async () => {
+  let finishRegistering!: () => void;
+  let holdRegistration = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_registerScenario' && holdRegistration) {
+      await new Promise<void>((resolve) => {
+        finishRegistering = resolve;
+      });
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="double-step"
+      initialSteps={[1, 2, 3].map((height) => ({
+        id: `${height}`,
+        name: 'Slot',
+        type: 'slot',
+        actions: [stepAction(collateralTemplate)],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByTitle('Play scenario'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  const step = await screen.findByTitle('Step forward');
+  holdRegistration = true;
+  // Both clicks land before React renders again, so only a guard outside state can stop the second
+  act(() => {
+    step.click();
+    holdRegistration = false;
+    step.click();
+  });
+  expect(screen.getByTitle('Stop scenario')).toBeDisabled();
+  finishRegistering();
+  await waitFor(() => expect(rpcCalls()).toHaveLength(7));
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(10));
+  expect(
+    rpcCalls()
+      .filter((call) => call.method === 'surfnet_registerScenario')
+      .map((call) => call.params[0].name)
+  ).toEqual(['Scenario · column 1/3', 'Scenario · column 2/3', 'Scenario · column 3/3']);
 });
