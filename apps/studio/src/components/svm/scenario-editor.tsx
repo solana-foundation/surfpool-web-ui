@@ -13,6 +13,7 @@ import {
   type DynamicRefOption,
   type OverridePayload,
 } from '@/lib/scenarios-api';
+import { setSurfnetClockPaused } from '@/lib/surfnet-clock';
 import {
   ArrowDownTrayIcon,
   ArrowUturnLeftIcon,
@@ -25,7 +26,18 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
+import {
+  Combobox,
+  ComboboxLabel,
+  ComboboxOption,
+  Dropdown,
+  DropdownButton,
+  DropdownItem,
+  DropdownLabel,
+  DropdownMenu,
+  Select,
+  Switch,
+} from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
@@ -131,6 +143,14 @@ const KAMINO_PRODUCTS: { protocol: string; title: string; description: string }[
   { protocol: 'kamino-farms', title: 'Farms & Rewards', description: 'Emissions and user stakes' },
 ];
 
+type PlayClock = 'paused' | 'running';
+
+const PAUSED_CLOCK_WARNING =
+  'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
+
+const PLAY_BUTTON_CLASS =
+  'flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500';
+
 // A pubkey address the template leaves empty names no account; the override carries the one it targets.
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
@@ -164,6 +184,7 @@ export default function ScenarioEditor({
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
+  const [playClock, setPlayClock] = useState<PlayClock>('running');
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
   const [isStepping, setIsStepping] = useState<boolean>(false);
@@ -392,6 +413,7 @@ export default function ScenarioEditor({
   // Fetch protocols dynamically from API
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [protocolsLoading, setProtocolsLoading] = useState(true);
+  const [templateTags, setTemplateTags] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     const fetchProtocols = async () => {
@@ -401,6 +423,7 @@ export default function ScenarioEditor({
           throw new Error('Failed to fetch protocols');
         }
         const templates = await response.json();
+        setTemplateTags(Object.fromEntries(templates.map((template: any) => [template.id, template.tags ?? []])));
 
         // Group templates by protocol
         const protocolGroups: Record<string, any[]> = {};
@@ -472,6 +495,10 @@ export default function ScenarioEditor({
 
     fetchProtocols();
   }, [studioUrl]);
+
+  const isClockSensitive = slots.some((slot) =>
+    slot.actions.some((action) => templateTags[action.actionId]?.includes('clock-sensitive'))
+  );
 
   const filteredProtocols = protocols.filter((protocol) => {
     const query = searchQuery.toLowerCase();
@@ -917,7 +944,7 @@ export default function ScenarioEditor({
         return;
       }
       registeredColumnRef.current = next;
-      if (!(await advanceOneSlot())) {
+      if (playClock === 'paused' && !(await advanceOneSlot())) {
         setIsExecuting(true);
         return;
       }
@@ -1001,86 +1028,68 @@ export default function ScenarioEditor({
     }
   };
 
-  const startPlay = async () => {
+  // A running clock produces the registered column's slot by itself, so only a paused one is stepped
+  const startPlay = async (clock: PlayClock) => {
     const [firstSlot] = slots;
     if (firstSlot && !(await registerColumn(firstSlot))) {
       return;
     }
 
-    try {
-      const pauseResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_pauseClock',
-        }),
-      });
-
-      if (pauseResponse.ok) {
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: true },
-          })
-        );
+    if (clock === 'paused') {
+      if (await setSurfnetClockPaused(rpcUrl, true)) {
         logger.log('🎬 Clock paused after scenario registration');
+      } else {
+        console.error('Error pausing clock');
       }
-    } catch (error) {
-      console.error('Error pausing clock:', error);
+
+      if (firstSlot && !(await advanceOneSlot())) {
+        await resumeClock();
+        return;
+      }
     }
 
-    if (firstSlot && !(await advanceOneSlot())) {
-      return;
-    }
-
+    setPlayClock(clock);
     setCurrentPlaybackSlot(0);
     setIsExecuting(true);
     setMode('play');
   };
 
   // Registering waits for surfnet to prepare the scenario, which takes seconds for large ones.
-  const handlePlay = async () => {
+  const handlePlay = async (clock: PlayClock) => {
     if (isStartingPlay) return;
     setIsStartingPlay(true);
     try {
-      await startPlay();
+      await startPlay(clock);
     } finally {
       setIsStartingPlay(false);
     }
   };
 
-  const handleStop = () => {
+  const handlePlayPaused = () => handlePlay('paused');
+
+  const handlePlayRunning = () => handlePlay('running');
+
+  const handleStop = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
+    }
     registeredColumnRef.current = null;
     setMode('read');
     setIsExecuting(false);
     setCurrentPlaybackSlot(0);
   };
 
-  const handleComplete = async () => {
-    // Resume the clock when completing scenario playback
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'surfnet_resumeClock',
-        }),
-      });
+  const resumeClock = async () => {
+    if (await setSurfnetClockPaused(rpcUrl, false)) {
+      logger.log('▶️ Clock resumed after scenario playback');
+    } else {
+      console.error('Error resuming clock');
+    }
+  };
 
-      if (response.ok) {
-        // Dispatch event so header widget and other components sync
-        window.dispatchEvent(
-          new CustomEvent('clockPauseStateChanged', {
-            detail: { isPaused: false },
-          })
-        );
-        logger.log('▶️ Clock resumed after scenario completion');
-      }
-    } catch (error) {
-      console.error('Error resuming clock:', error);
+  const handleComplete = async () => {
+    if (playClock === 'paused') {
+      await resumeClock();
     }
 
     setMode('read');
@@ -2947,19 +2956,29 @@ export default function ScenarioEditor({
                 <div className="flex items-center gap-3 pl-8">
                   {mode === 'read' ? (
                     <>
-                      <button
-                        onClick={handlePlay}
-                        disabled={isStartingPlay}
-                        aria-busy={isStartingPlay}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
-                        title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
-                      >
-                        {isStartingPlay ? (
-                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                        ) : (
-                          <PlayIcon className="h-6 w-6" />
-                        )}
-                      </button>
+                      <Dropdown>
+                        <DropdownButton
+                          as="button"
+                          className={PLAY_BUTTON_CLASS}
+                          disabled={isStartingPlay}
+                          aria-busy={isStartingPlay}
+                          title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
+                        >
+                          {isStartingPlay ? (
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                          ) : (
+                            <PlayIcon className="h-6 w-6" />
+                          )}
+                        </DropdownButton>
+                        <DropdownMenu anchor="top end">
+                          <DropdownItem onClick={handlePlayPaused}>
+                            <DropdownLabel>Play with paused clock</DropdownLabel>
+                          </DropdownItem>
+                          <DropdownItem onClick={handlePlayRunning}>
+                            <DropdownLabel>Play with running clock</DropdownLabel>
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
                       <button
                         onClick={downloadScenario}
                         className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:scale-110 hover:bg-zinc-600"
@@ -3011,6 +3030,11 @@ export default function ScenarioEditor({
                 </div>
               </div>
             </div>
+            {!!isClockSensitive && mode === 'read' && (
+              <div className="absolute inset-x-0 top-full mt-2 text-center text-xs text-amber-300">
+                {PAUSED_CLOCK_WARNING}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
