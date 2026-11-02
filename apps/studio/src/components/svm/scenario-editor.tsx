@@ -1030,6 +1030,12 @@ export default function ScenarioEditor({
 
   // A running clock produces the registered column's slot by itself, so only a paused one is stepped
   const startPlay = async (clock: PlayClock) => {
+    // A clock paused from the header would never produce the registered column's slot
+    if (clock === 'running' && !(await setSurfnetClockPaused(rpcUrl, false))) {
+      console.error('Error resuming clock');
+      return;
+    }
+
     const [firstSlot] = slots;
     if (firstSlot && !(await registerColumn(firstSlot))) {
       return;

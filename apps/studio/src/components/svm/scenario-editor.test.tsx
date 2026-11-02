@@ -402,6 +402,7 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
 const rpcCalls = () =>
   fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body));
 const rpcMethods = () => rpcCalls().map((call) => call.method);
+const registrations = () => rpcCalls().filter((call) => call.method === 'surfnet_registerScenario');
 
 const clockSensitiveTemplate = { ...collateralTemplate, tags: ['clock-sensitive'] };
 
@@ -512,18 +513,32 @@ it('retries a step whose time travel failed without registering the column again
   ).toEqual(['surfnet_registerScenario', 'getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
 });
 
-it('plays with the running clock: one registration per Play and per step, no pause or time travel', async () => {
+it('plays with the running clock: resumes the clock, then one registration per Play and per step, no pause or time travel', async () => {
   renderColumns(collateralTemplate, ['1', '2', '3']);
 
   fireEvent.click(await screen.findByText('Play with running clock'));
-  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario']));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']));
   fireEvent.click(await screen.findByTitle('Step forward'));
-  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario', 'surfnet_registerScenario']));
-  expect(rpcCalls()[1].params[0].overrides[0].values).toEqual({ 'traderState.quoteLotCollateral': '2' });
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario', 'surfnet_registerScenario'])
+  );
+  expect(rpcCalls()[2].params[0].overrides[0].values).toEqual({ 'traderState.quoteLotCollateral': '2' });
 
   fireEvent.click(await screen.findByTitle('Stop scenario'));
   expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
-  expect(rpcMethods()).toEqual(['surfnet_registerScenario', 'surfnet_registerScenario']);
+  expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario', 'surfnet_registerScenario']);
+});
+
+it('does not register a running Play when the clock cannot be resumed', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => ({
+    ok: !(url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'surfnet_resumeClock'),
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="resume-fails" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText('Play with running clock'));
+  expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
+  expect(rpcMethods()).toEqual(['surfnet_resumeClock']);
 });
 
 it('resumes the clock when a paused playback is stopped', async () => {
@@ -669,7 +684,7 @@ it('ignores a second Step and keeps Stop disabled while the first one is still r
 it('ignores a second Step with the running clock while the first one is still registering', async () => {
   renderColumns(collateralTemplate, ['1', '2', '3']);
   fireEvent.click(await screen.findByText('Play with running clock'));
-  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_registerScenario']));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']));
 
   let finishRegistering!: () => void;
   let holdRegistration = true;
@@ -686,11 +701,11 @@ it('ignores a second Step with the running clock while the first one is still re
   holdRegistration = false;
   fireEvent.click(screen.getByTitle('Step forward'));
   finishRegistering();
-  await waitFor(() => expect(rpcMethods()).toHaveLength(2));
+  await waitFor(() => expect(registrations()).toHaveLength(2));
 
   fireEvent.click(await screen.findByTitle('Step forward'));
-  await waitFor(() => expect(rpcMethods()).toHaveLength(3));
-  expect(rpcCalls().map((call) => call.params[0].overrides[0].values['traderState.quoteLotCollateral'])).toEqual([
+  await waitFor(() => expect(registrations()).toHaveLength(3));
+  expect(registrations().map((call) => call.params[0].overrides[0].values['traderState.quoteLotCollateral'])).toEqual([
     '1',
     '2',
     '3',
