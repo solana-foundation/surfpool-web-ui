@@ -26,6 +26,7 @@ overrides:
   postcss-selector-parser@>=7.0.0 <7.1.6: ^7.1.6
   uuid@<11.1.1: ^11.1.1
   '@babel/plugin-transform-modules-systemjs@<7.29.4': ^7.29.4
+  browserslist@<4.28.7: ^4.28.7
 
 importers:
 
@@ -5599,8 +5600,8 @@ packages:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
 
-  browserslist@4.28.0:
-    resolution: {integrity: sha512-tbydkR/CxfMwelN0vwdP/pLkDwyAASZ+VfWm4EOwlB6SWhx1sYnWLqo8N5j0rAzPfzfRaxt0mM/4wPU/Su84RQ==}
+  browserslist@4.29.5:
+    resolution: {integrity: sha512-khTmKu5NGYTotqcYo8Bew2k4RAE9PuXRSFRXG2lQBrCEQHyeQ/vX6gKMxfokwywBsLiXZMnHsmWMG1pnO8J7uQ==}
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
 
@@ -6235,8 +6236,8 @@ packages:
     resolution: {integrity: sha512-dS5cbA9rA2VR4Ybuvhg6jvdmp46ubLn3E+px8cG/35aEDNclrqoCjg6mt0HYZ/M+OoESS3jSkCrqk1kWAEhWAw==}
     engines: {bun: '>=1', deno: '>=2', node: '>=16'}
 
-  electron-to-chromium@1.5.259:
-    resolution: {integrity: sha512-I+oLXgpEJzD6Cwuwt1gYjxsDmu/S/Kd41mmLA3O+/uH2pFRO/DvOjUyGozL8j3KeLV6WyZ7ssPwELMsXCcsJAQ==}
+  electron-to-chromium@1.5.473:
+    resolution: {integrity: sha512-9njcRQK+6FOXNAWw5g+h2RPiyazqo5RFMVJ39ZMHjDHUNnnFlhnOGV7O0WmJetODDx19ES5p+FLi+KCVFQGugw==}
 
   emoji-regex-xs@2.0.1:
     resolution: {integrity: sha512-1QFuh8l7LqUcKe24LsPUNzjrzJQ7pgRwp1QMcZ5MX6mFplk2zQ08NVCM84++1cveaUUYtcCYHmeFEuNg16sU4g==}
@@ -8040,8 +8041,9 @@ packages:
   node-mock-http@1.0.4:
     resolution: {integrity: sha512-8DY+kFsDkNXy1sJglUfuODx1/opAGJGyrTuFqEoN90oRc2Vk0ZbD4K2qmKXBBEhZQzdKHIVfEJpDU8Ak2NJEvQ==}
 
-  node-releases@2.0.27:
-    resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
+  node-releases@2.0.63:
+    resolution: {integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==}
+    engines: {node: '>=18'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -9410,11 +9412,11 @@ packages:
       uploadthing:
         optional: true
 
-  update-browserslist-db@1.1.4:
-    resolution: {integrity: sha512-q0SPT4xyU84saUX+tomz1WLkxUbuaJnR1xWt17M7fJtEJigJeWUNGUqrauFXsHnqev9y9JTRGwk13tFBuKby4A==}
+  update-browserslist-db@1.3.4:
+    resolution: {integrity: sha512-t8wonIOdQyOjtPd2VktlBu6QjTVTks6v8bSi7kd0r2Vll8TK1JYDZtRRdbmCHOAMphkZgrzK+L+vXK4pyZ8t4A==}
     hasBin: true
     peerDependencies:
-      browserslist: '>= 4.21.0'
+      browserslist: ^4.28.7
 
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
@@ -10146,7 +10148,7 @@ snapshots:
     dependencies:
       '@babel/compat-data': 7.28.6
       '@babel/helper-validator-option': 7.27.1
-      browserslist: 4.28.0
+      browserslist: 4.29.5
       lru-cache: 5.1.1
       semver: 6.3.1
 
@@ -10154,7 +10156,7 @@ snapshots:
     dependencies:
       '@babel/compat-data': 7.29.7
       '@babel/helper-validator-option': 7.29.7
-      browserslist: 4.28.0
+      browserslist: 4.29.5
       lru-cache: 5.1.1
       semver: 6.3.1
 
@@ -16221,13 +16223,13 @@ snapshots:
     dependencies:
       fill-range: 7.1.1
 
-  browserslist@4.28.0:
+  browserslist@4.29.5:
     dependencies:
       baseline-browser-mapping: 2.11.34
       caniuse-lite: 1.0.30001819
-      electron-to-chromium: 1.5.259
-      node-releases: 2.0.27
-      update-browserslist-db: 1.1.4(browserslist@4.28.0)
+      electron-to-chromium: 1.5.473
+      node-releases: 2.0.63
+      update-browserslist-db: 1.3.4(browserslist@4.29.5)
 
   bs58@4.0.1:
     dependencies:
@@ -16381,7 +16383,7 @@ snapshots:
 
   core-js-compat@3.47.0:
     dependencies:
-      browserslist: 4.28.0
+      browserslist: 4.29.5
 
   core-util-is@1.0.3: {}
 
@@ -16838,7 +16840,7 @@ snapshots:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  electron-to-chromium@1.5.259: {}
+  electron-to-chromium@1.5.473: {}
 
   emoji-regex-xs@2.0.1: {}
 
@@ -19209,7 +19211,7 @@ snapshots:
 
   node-mock-http@1.0.4: {}
 
-  node-releases@2.0.27: {}
+  node-releases@2.0.63: {}
 
   normalize-path@3.0.0: {}
 
@@ -20883,9 +20885,9 @@ snapshots:
     optionalDependencies:
       idb-keyval: 6.2.2
 
-  update-browserslist-db@1.1.4(browserslist@4.28.0):
+  update-browserslist-db@1.3.4(browserslist@4.29.5):
     dependencies:
-      browserslist: 4.28.0
+      browserslist: 4.29.5
       escalade: 3.2.0
       picocolors: 1.1.1
 
