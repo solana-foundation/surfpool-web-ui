@@ -38,6 +38,7 @@ overrides:
   js-yaml@<3.15.2: ^3.15.2
   js-yaml@>=4.0.0 <4.3.2: ^4.3.2
   lodash@<4.18.0: ^4.18.0
+  lodash-es@<4.18.0: ^4.18.0
 
 importers:
 
@@ -69,7 +70,7 @@ importers:
         version: link:../../packages/ui
       '@vercel/analytics':
         specifier: ^1.6.1
-        version: 1.6.1(next@16.4.1(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
+        version: 1.6.1(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -78,7 +79,7 @@ importers:
         version: 16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5)
       fumadocs-mdx:
         specifier: ^14.1.1
-        version: 14.2.5(@types/react@19.2.7)(fumadocs-core@16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)(vite@6.4.1(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1))
+        version: 14.2.5(@types/react@19.2.7)(fumadocs-core@16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)(vite@6.4.4(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1))
       fumadocs-ui:
         specifier: ^16.2.5
         version: 16.4.7(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(fumadocs-core@16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(tailwindcss@4.1.17)
@@ -248,7 +249,7 @@ importers:
         version: 19.2.3(@types/react@19.2.7)
       '@vitejs/plugin-react':
         specifier: ^4.7.0
-        version: 4.7.0(vite@8.3.1(@types/node@20.19.25)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.44.1)(yaml@2.9.1))
+        version: 4.7.0(vite@6.4.1(@types/node@20.19.25)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1))
       '@vitest/coverage-v8':
         specifier: ^3.2.7
         version: 3.2.7(vitest@3.2.7(@types/debug@4.1.13)(@types/node@20.19.25)(jiti@2.6.1)(jsdom@26.1.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1))
@@ -372,7 +373,7 @@ importers:
         version: link:../../packages/ui
       '@vercel/analytics':
         specifier: ^1.6.1
-        version: 1.6.1(next@16.4.1(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
+        version: 1.6.1(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -491,7 +492,7 @@ importers:
         version: 12.23.24(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       next:
         specifier: ^15.5.26
-        version: 15.5.26(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.25)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 15.5.26(@opentelemetry/api@1.9.0)(@types/node@20.19.25)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react:
         specifier: ^19.1.0
         version: 19.2.3
@@ -7579,8 +7580,8 @@ packages:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
     engines: {node: '>=10'}
 
-  lodash-es@4.17.23:
-    resolution: {integrity: sha512-kVI48u3PZr38HdYz98UmfPnXl2DXrpdctLrFLCd3kOx1xUkOmpFPx7gCWWM5MPkL/fD8zb+Ph0QzjGFs4+hHWg==}
+  lodash-es@4.18.1:
+    resolution: {integrity: sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A==}
 
   lodash.debounce@4.0.8:
     resolution: {integrity: sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow==}
@@ -15162,12 +15163,24 @@ snapshots:
       d3-selection: 3.0.0
       d3-transition: 3.0.1(d3-selection@3.0.0)
 
-  '@vercel/analytics@1.6.1(next@16.4.1(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)':
+  '@vercel/analytics@1.6.1(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)':
     optionalDependencies:
       next: 16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react: 19.2.3
 
   '@vercel/oidc@3.0.5': {}
+
+  '@vitejs/plugin-react@4.7.0(vite@6.4.1(@types/node@20.19.25)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1))':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.29.7)
+      '@rolldown/pluginutils': 1.0.0-beta.27
+      '@types/babel__core': 7.20.5
+      react-refresh: 0.17.0
+      vite: 6.4.1(@types/node@20.19.25)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1)
+    transitivePeerDependencies:
+      - supports-color
 
   '@vitejs/plugin-react@4.7.0(vite@8.3.1(@types/node@20.19.25)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.44.1)(yaml@2.9.1))':
     dependencies:
@@ -16661,7 +16674,7 @@ snapshots:
   dagre-d3-es@7.0.14:
     dependencies:
       d3: 7.9.0
-      lodash-es: 4.17.23
+      lodash-es: 4.18.1
 
   damerau-levenshtein@1.0.8: {}
 
@@ -17571,7 +17584,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  fumadocs-mdx@14.2.5(@types/react@19.2.7)(fumadocs-core@16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)(vite@6.4.1(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1)):
+  fumadocs-mdx@14.2.5(@types/react@19.2.7)(fumadocs-core@16.4.7(@types/react@19.2.7)(lucide-react@0.562.0(react@19.2.3))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.3.5))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)(vite@6.4.4(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1)):
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@standard-schema/spec': 1.1.0
@@ -17595,7 +17608,7 @@ snapshots:
       '@types/react': 19.2.7
       next: 16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.24)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react: 19.2.3
-      vite: 6.4.1(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1)
+      vite: 6.4.4(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.33.0)(terser@5.44.1)(yaml@2.9.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -18448,7 +18461,7 @@ snapshots:
     dependencies:
       p-locate: 5.0.0
 
-  lodash-es@4.17.23: {}
+  lodash-es@4.18.1: {}
 
   lodash.debounce@4.0.8: {}
 
@@ -19099,7 +19112,7 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
-  next@15.5.26(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@types/node@20.19.25)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
+  next@15.5.26(@opentelemetry/api@1.9.0)(@types/node@20.19.25)(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
     dependencies:
       '@next/env': 15.5.26
       '@swc/helpers': 0.5.15
