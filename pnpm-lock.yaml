@@ -48,6 +48,7 @@ overrides:
   postcss@<8.5.23: ^8.5.23
   rollup@>=4.0.0 <4.59.0: ^4.59.0
   socket.io-parser@>=4.0.0 <4.2.7: ^4.2.7
+  source-map-js@<1.2.2: ^1.2.2
 
 importers:
 
@@ -8769,10 +8770,6 @@ packages:
   sonic-boom@2.8.0:
     resolution: {integrity: sha512-kuonw1YOYYNOve5iHdSahXPOK49GqwA+LZhI6Wz/l0rP57iKyXXIHaRagOBHAPmGwJC6od2Z9zgvZ5loSgMlVg==}
 
-  source-map-js@1.2.1:
-    resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
-    engines: {node: '>=0.10.0'}
-
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -14332,7 +14329,7 @@ snapshots:
       jiti: 2.6.1
       lightningcss: 1.30.2
       magic-string: 0.30.21
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
       tailwindcss: 4.1.17
 
   '@tailwindcss/node@4.1.18':
@@ -14342,7 +14339,7 @@ snapshots:
       jiti: 2.6.1
       lightningcss: 1.30.2
       magic-string: 0.30.21
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
       tailwindcss: 4.1.18
 
   '@tailwindcss/oxide-android-arm64@4.1.17':
@@ -18291,7 +18288,7 @@ snapshots:
     dependencies:
       '@babel/parser': 7.28.6
       '@babel/types': 7.28.6
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   make-dir@4.0.0:
     dependencies:
@@ -20089,8 +20086,6 @@ snapshots:
   sonic-boom@2.8.0:
     dependencies:
       atomic-sleep: 1.0.0
-
-  source-map-js@1.2.1: {}
 
   source-map-js@1.2.2: {}
 
