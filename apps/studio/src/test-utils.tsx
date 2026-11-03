@@ -84,6 +84,16 @@ export function makeTx(overrides: Partial<TransactionInfo> = {}): TransactionInf
   };
 }
 
+function MockComboboxOption({ option, onSelect, children }: any) {
+  const handleClick = () => onSelect(option);
+
+  return (
+    <button type="button" onClick={handleClick}>
+      {children}
+    </button>
+  );
+}
+
 export function MockCombobox({
   'aria-label': ariaLabel,
   options,
@@ -101,6 +111,14 @@ export function MockCombobox({
   const matches = query ? options.filter((option: any) => filter(option, query)) : options;
   const typedOption = customOption && query?.trim() ? customOption(query.trim()) : null;
   const shown = typedOption === null ? matches : [...matches, typedOption];
+  const renderOption = (option: any) => (
+    <li key={option?.id ?? option}>
+      <MockComboboxOption option={option} onSelect={onChange}>
+        {displayValue(option)}
+      </MockComboboxOption>
+      {children(option)}
+    </li>
+  );
 
   return (
     <div>
@@ -111,16 +129,7 @@ export function MockCombobox({
         onChange={handleQueryChange}
         disabled={disabled}
       />
-      <ul aria-label={`${ariaLabel} results`}>
-        {shown.map((option: any) => (
-          <li key={option?.id ?? option}>
-            <button type="button" onClick={() => onChange(option)}>
-              {displayValue(option)}
-            </button>
-            {children(option)}
-          </li>
-        ))}
-      </ul>
+      <ul aria-label={`${ariaLabel} results`}>{shown.map(renderOption)}</ul>
     </div>
   );
 }
