@@ -16,6 +16,7 @@
   },
   "pnpm": {
     "overrides": {
+      "vite": "6.4.4",
       "@moneymq/sdk": "0.10.0",
       "@moneymq/react": "0.10.0",
       "brace-expansion@<1.1.21": "^1.1.21",
