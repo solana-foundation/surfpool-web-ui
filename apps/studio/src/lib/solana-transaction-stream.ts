@@ -101,6 +101,9 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
   
   const subscriptionIdRef = useRef<string | null>(null);
   const processedSignaturesRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  const streamingRequestedRef = useRef(autoStart);
+  const streamOperationRef = useRef(0);
 
   const fetchTransactionDetails = useCallback(async (signature: string) => {
     try {
@@ -199,7 +202,23 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
     await fetchTransactionDetails(signature);
   }, [fetchTransactionDetails]);
 
+  const subscribeToStream = useCallback(async (operation: number) => {
+    const current = () => mountedRef.current && streamingRequestedRef.current &&
+      operation === streamOperationRef.current;
+    const filter = filterByAccount ? { account: filterByAccount } :
+                  filterByProgram ? { program: filterByProgram } : undefined;
+    const subscription = await solanaWebSocketService.subscribeToTransactions(filter);
+    if (!current()) {
+      solanaWebSocketService.unsubscribe(subscription, 'transaction');
+      return false;
+    }
+    subscriptionIdRef.current = subscription;
+    return true;
+  }, [filterByAccount, filterByProgram]);
+
   const startStreaming = useCallback(async () => {
+    streamingRequestedRef.current = true;
+    const operation = ++streamOperationRef.current;
     if (!wsUrl) {
       const errorMsg = 'WebSocket URL not provided';
       console.error('❌', errorMsg);
@@ -234,28 +253,29 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       await solanaWebSocketService.connect(convertedWsUrl);
       logger.log('🔗 WebSocket connected successfully');
 
-      // Subscribe to transactions
-      const filter = filterByAccount ? { account: filterByAccount } :
-                    filterByProgram ? { program: filterByProgram } : undefined;
-
-      logger.log('📡 Subscribing to transactions with filter:', filter);
-      subscriptionIdRef.current = await solanaWebSocketService.subscribeToTransactions(filter);
-      logger.log('✅ Transaction subscription confirmed, ID:', subscriptionIdRef.current);
+      if (!mountedRef.current || !streamingRequestedRef.current || operation !== streamOperationRef.current) return;
+      if (!await subscribeToStream(operation)) return;
 
       setIsStreaming(true);
       setStats(prev => ({ ...prev, connectionStatus: 'connected' }));
       logger.log('🎉 Transaction stream started successfully');
 
     } catch (err) {
+      if (!mountedRef.current || !streamingRequestedRef.current || operation !== streamOperationRef.current) {
+        logger.log('Ignoring a superseded stream connection failure:', err);
+        return;
+      }
       const errorMsg = err instanceof Error ? err.message : 'Failed to start streaming';
       console.error('❌ Failed to start streaming:', errorMsg);
       console.error('❌ Full error:', err);
       setError(errorMsg);
       setStats(prev => ({ ...prev, connectionStatus: 'error' }));
     }
-  }, [wsUrl, filterByAccount, filterByProgram]);
+  }, [wsUrl, subscribeToStream]);
 
   const stopStreaming = useCallback(() => {
+    streamingRequestedRef.current = false;
+    streamOperationRef.current++;
     if (subscriptionIdRef.current) {
       solanaWebSocketService.unsubscribeAll();
       subscriptionIdRef.current = null;
@@ -327,6 +347,48 @@ export function useTransactionInspector(options: TransactionInspectorOptions = {
       lastUpdate: new Date()
     }));
   }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      streamOperationRef.current++;
+    };
+  }, [wsUrl, filterByAccount, filterByProgram]);
+
+  useEffect(() => {
+    let disconnected = false;
+    const handleDisconnected = () => {
+      disconnected = true;
+      streamOperationRef.current++;
+    };
+    const handleReconnected = async () => {
+      if (!disconnected) return;
+      disconnected = false;
+      // Subscriptions belong to the old server connection, not the new one.
+      if (streamingRequestedRef.current) {
+        const operation = ++streamOperationRef.current;
+        try {
+          if (await subscribeToStream(operation)) {
+            setError(null);
+            setIsStreaming(true);
+          }
+        } catch (err) {
+          console.error('Resubscribing after a reconnect failed:', err);
+          if (mountedRef.current && streamingRequestedRef.current && operation === streamOperationRef.current) {
+            setError(err instanceof Error ? err.message : 'Failed to resume streaming');
+            setStats(prev => ({ ...prev, connectionStatus: 'error' }));
+          }
+        }
+      }
+    };
+    solanaWebSocketService.on('disconnected', handleDisconnected);
+    solanaWebSocketService.on('connected', handleReconnected);
+    return () => {
+      solanaWebSocketService.off('disconnected', handleDisconnected);
+      solanaWebSocketService.off('connected', handleReconnected);
+    };
+  }, [subscribeToStream]);
 
   // Listen for transaction events
   useEffect(() => {
@@ -522,4 +584,3 @@ export async function setAccount(address: string, lamports: number, rpcUrl: stri
     logger.log(error);
   }
 }
-

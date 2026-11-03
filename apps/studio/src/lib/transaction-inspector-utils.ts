@@ -385,6 +385,9 @@ export const computeHexDiff = (beforeBytes: number[], afterBytes: number[]) => {
 
 // --- Helper functions extracted from the component ---
 
+export const escapeHtmlText = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 export const formatHexDump = (data: string): string => {
   const bytes = Array.from(data).map((char) => char.charCodeAt(0));
   const lines = [];
@@ -413,7 +416,7 @@ export const formatHexDump = (data: string): string => {
 
     // Create line with HTML styling and proper layout - use CSS for spacing
     const hexSection = `<span class="text-gray-500">${offset}:</span> <span class="text-white hex-grid">${hexPart}</span>`;
-    const asciiSection = `<span class="text-gray-400">|${asciiPart}|</span>`;
+    const asciiSection = `<span class="text-gray-400">|${escapeHtmlText(asciiPart)}|</span>`;
 
     // Use flexbox layout to push ASCII to the right
     lines.push(
@@ -454,7 +457,7 @@ export const getHexData = (data: any): string => {
         const decoded = atob(data[0]);
         return formatHexDump(decoded);
       } catch (error) {
-        return data[0] || '<none>';
+        return data[0] ? escapeHtmlText(String(data[0])) : '<none>';
       }
     }
 
@@ -489,7 +492,7 @@ export const getHexDataForUpdates = (data: any): string => {
         const decoded = atob(data[0]);
         return decoded === '' ? '<none>' : formatHexOnly(decoded);
       } catch (error) {
-        return data[0] === '' ? '<none>' : data[0] || '<none>';
+        return data[0] ? escapeHtmlText(String(data[0])) : '<none>';
       }
     }
 
