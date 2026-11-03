@@ -39,7 +39,8 @@
       "@babel/plugin-transform-modules-systemjs@<7.29.4": "^7.29.4",
       "browserslist@<4.28.7": "^4.28.7",
       "defu@<6.1.5": "^6.1.5",
-      "dompurify@<3.4.17": "^3.4.17"
+      "dompurify@<3.4.17": "^3.4.17",
+      "flatted@<3.4.2": "^3.4.2"
     }
   },
   "packageManager": "pnpm@10.14.0"
