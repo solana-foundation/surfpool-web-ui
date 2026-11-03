@@ -54,7 +54,7 @@ export function StackedLayout({
   path,
 }: React.PropsWithChildren<{ navbar: React.ReactNode; sidebar: React.ReactNode; path: string }>) {
   let [showSidebar, setShowSidebar] = useState(false);
-  const { rpcUrl, wsUrl } = useAppConfig();
+  const { rpcUrl, wsUrl, historical } = useAppConfig();
 
   return (
     <div className="relative isolate flex min-h-svh w-full flex-col bg-white lg:bg-zinc-100 dark:bg-zinc-900 dark:lg:bg-zinc-950">
@@ -92,6 +92,7 @@ export function StackedLayout({
               rpcUrl={rpcUrl}
               wsUrl={wsUrl}
               solanaWebSocketService={solanaWebSocketService}
+              historical={historical}
             />
           </div>
         </div>

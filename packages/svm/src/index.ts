@@ -7,6 +7,7 @@ export { default as TransactionInspector } from './transaction-inspector';
 
 // Services
 export { solanaWebSocketService, SolanaWebSocketService } from './lib/solana-websocket-service';
+export { useClockState } from './lib/use-clock-state';
 
 // Utilities
 export * from './lib/address-utils';

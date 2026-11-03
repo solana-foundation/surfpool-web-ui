@@ -80,7 +80,7 @@ export default function TransactionInspector({
       };
     }
   }, []);
-  const { rpcUrl: configRpcUrl, wsUrl: configWsUrl } = useAppConfig();
+  const { rpcUrl: configRpcUrl, wsUrl: configWsUrl, historical } = useAppConfig();
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [transactionProfile, setTransactionProfile] = useState<any>(null);
@@ -108,6 +108,7 @@ export default function TransactionInspector({
       filterByProgram,
       filterByAccount,
       fetchHistorical,
+      reconcile: historical,
     });
 
   // Handle initial transaction signature from URL parameter

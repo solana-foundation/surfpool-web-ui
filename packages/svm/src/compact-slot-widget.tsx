@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { logger } from '@surfpool/shared';
+import { useClockState } from './lib/use-clock-state';
 
 interface CompactSlotWidgetProps {
   className?: string;
@@ -10,6 +11,11 @@ interface CompactSlotWidgetProps {
   solanaWebSocketService: any; // We'll type this properly later
   /** If true, use direct WebSocket instead of shared service. Use when widget may remount. */
   cleanupOnUnmount?: boolean;
+  /**
+   * A historical surfnet: it shows its absolute current slot (as its RPC and terminal do),
+   * starts with a frozen clock, and produces slots only on an explicit advance.
+   */
+  historical?: boolean;
 }
 
 const TOTAL_BARS = 30; // 30 bars on desktop
@@ -24,7 +30,8 @@ export default function CompactSlotWidget({
   rpcUrl,
   wsUrl,
   solanaWebSocketService: externalWsService,
-  cleanupOnUnmount = false
+  cleanupOnUnmount = false,
+  historical = false
 }: CompactSlotWidgetProps) {
   const [mounted, setMounted] = useState(false);
   const [slotHeight, setSlotHeight] = useState<number>(0);
@@ -32,13 +39,17 @@ export default function CompactSlotWidget({
   const [epochProgress, setEpochProgress] = useState<number>(0);
   const [activeBarIndex, setActiveBarIndex] = useState<number>(0);
   const [slotsInEpoch, setSlotsInEpoch] = useState<number>(432000);
-  const [isClockPaused, setIsClockPaused] = useState<boolean>(false);
+  const [isClockPaused] = useClockState(rpcUrl, externalWsService, historical);
   const [dimmingPhase, setDimmingPhase] = useState<number>(0);
   const [isDisconnected, setIsDisconnected] = useState<boolean>(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const lastSlotReceivedRef = useRef<number>(Date.now());
-  const isClockPausedRef = useRef<boolean>(false);
+  const isClockPausedRef = useRef<boolean | null>(null);
   const slotsInEpochRef = useRef<number>(432000);
+  const refreshEpochRef = useRef<((coalesce?: boolean) => void) | null>(null);
+  const slotNotificationsRef = useRef(0);
+  const epochRangeRef = useRef<{ first: number; end: number } | null>(null);
+  const latestSlotRef = useRef<number | null>(null);
 
   // Direct WebSocket refs for cleanupOnUnmount mode
   const directWsRef = useRef<WebSocket | null>(null);
@@ -55,10 +66,24 @@ export default function CompactSlotWidget({
 
   // Fetch initial epoch data
   useEffect(() => {
-    const fetchEpochData = async () => {
+    let mounted = true;
+    let request = 0;
+    let pending = false;
+    let controller: AbortController | null = null;
+    epochRangeRef.current = null;
+    latestSlotRef.current = null;
+    const fetchEpochData = async (coalesce = false) => {
+      if (coalesce && pending) return;
+      pending = true;
+      const current = ++request;
+      const notifications = slotNotificationsRef.current;
+      let refreshForNewSlot = false;
+      controller?.abort();
+      controller = new AbortController();
       try {
         const epochResponse = await fetch(rpcUrl, {
           method: 'POST',
+          signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -67,30 +92,91 @@ export default function CompactSlotWidget({
           }),
         });
         const epochData = await epochResponse.json();
+        if (!mounted || current !== request) return;
         if (epochData.result) {
+          const first = epochData.result.absoluteSlot - epochData.result.slotIndex;
+          const end = first + epochData.result.slotsInEpoch;
+          const newerSlot = historical && notifications !== slotNotificationsRef.current
+            ? latestSlotRef.current : null;
+          if (newerSlot !== null && (newerSlot < first || newerSlot >= end)) {
+            logger.log('Dropping epoch metadata older than the latest slot notification:', { first, end, newerSlot });
+            refreshForNewSlot = true;
+            return;
+          }
+          epochRangeRef.current = { first, end };
           setEpoch(epochData.result.epoch);
-          setSlotHeight(epochData.result.slotIndex);
+          if (!historical || notifications === slotNotificationsRef.current) {
+            setSlotHeight(historical ? epochData.result.absoluteSlot : epochData.result.slotIndex);
+            latestSlotRef.current = epochData.result.absoluteSlot;
+          }
           setSlotsInEpoch(epochData.result.slotsInEpoch);
-          const progress = (epochData.result.slotIndex / epochData.result.slotsInEpoch) * 100;
+          slotsInEpochRef.current = epochData.result.slotsInEpoch;
+          const slotIndex = newerSlot !== null ? newerSlot - first : epochData.result.slotIndex;
+          const progress = (slotIndex / epochData.result.slotsInEpoch) * 100;
           setEpochProgress(progress);
+          if (historical) setActiveBarIndex(slotIndex % TOTAL_BARS);
         }
       } catch (error) {
-        console.error('Error fetching epoch info:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+          logger.log('Epoch info request cancelled');
+        } else {
+          console.error('Error fetching epoch info:', error);
+        }
+      } finally {
+        if (mounted && current === request) {
+          pending = false;
+          if (refreshForNewSlot) fetchEpochData(true);
+        }
       }
     };
 
+    refreshEpochRef.current = fetchEpochData;
     fetchEpochData();
-  }, [rpcUrl]);
+    let disconnected = false;
+    const onDisconnected = () => {
+      disconnected = true;
+      request++;
+      pending = false;
+      controller?.abort();
+    };
+    const onConnected = () => {
+      if (disconnected) {
+        disconnected = false;
+        fetchEpochData();
+      }
+    };
+    if (historical && !cleanupOnUnmount) {
+      externalWsService.on('disconnected', onDisconnected);
+      externalWsService.on('connected', onConnected);
+    }
+    return () => {
+      mounted = false;
+      request++;
+      controller?.abort();
+      refreshEpochRef.current = null;
+      externalWsService.off('disconnected', onDisconnected);
+      externalWsService.off('connected', onConnected);
+    };
+  }, [rpcUrl, historical, cleanupOnUnmount, externalWsService]);
 
   // Handle slot data from either direct WS or service
   const handleSlotData = (slotData: any) => {
     if (slotData?.parent !== undefined) {
-      const newSlot = slotData.parent;
+      slotNotificationsRef.current++;
+      const newSlot = historical ? slotData.slot : slotData.parent;
       const currentSlotsInEpoch = slotsInEpochRef.current;
-      const slotIndexInEpoch = newSlot % currentSlotsInEpoch;
+      const range = epochRangeRef.current;
+      const slotIndexInEpoch = historical
+        ? (range && newSlot >= range.first && newSlot < range.end ? newSlot - range.first : null)
+        : newSlot % currentSlotsInEpoch;
 
       lastSlotReceivedRef.current = Date.now();
-      setSlotHeight(slotIndexInEpoch);
+      latestSlotRef.current = newSlot;
+      setSlotHeight(historical ? newSlot : newSlot % currentSlotsInEpoch);
+      if (slotIndexInEpoch === null) {
+        refreshEpochRef.current?.(true);
+        return;
+      }
 
       const progress = (slotIndexInEpoch / currentSlotsInEpoch) * 100;
       setEpochProgress(progress);
@@ -125,6 +211,7 @@ export default function CompactSlotWidget({
         }
         logger.log('CompactSlotWidget: Direct WS connected');
         setIsDisconnected(false);
+        if (historical) refreshEpochRef.current?.();
 
         // Subscribe to slots
         const subscribeMsg = {
@@ -223,9 +310,24 @@ export default function CompactSlotWidget({
     externalWsService.on('slot', handleServiceSlot);
     startSlotSubscription();
 
+    // A frozen historical surfnet sends no slots, so silence says nothing about its
+    // subscription: renew it only when the service reconnects.
+    let disconnected = false;
+    const handleServiceDisconnected = () => {
+      disconnected = true;
+    };
+    const handleServiceReconnected = () => {
+      if (historical && disconnected) {
+        disconnected = false;
+        startSlotSubscription();
+      }
+    };
+    externalWsService.on('disconnected', handleServiceDisconnected);
+    externalWsService.on('connected', handleServiceReconnected);
+
     reconnectInterval = setInterval(() => {
       const timeSinceLastSlot = Date.now() - lastSlotReceivedRef.current;
-      if (timeSinceLastSlot > 5000 && isMounted) {
+      if (timeSinceLastSlot > 5000 && isMounted && !historical) {
         logger.log('CompactSlotWidget: No slots received for 5s, reconnecting...');
         startSlotSubscription();
       }
@@ -235,8 +337,10 @@ export default function CompactSlotWidget({
       isMounted = false;
       if (reconnectInterval) clearInterval(reconnectInterval);
       externalWsService.off('slot', handleServiceSlot);
+      externalWsService.off('disconnected', handleServiceDisconnected);
+      externalWsService.off('connected', handleServiceReconnected);
     };
-  }, [wsUrl, cleanupOnUnmount, externalWsService]);
+  }, [wsUrl, cleanupOnUnmount, externalWsService, historical]);
 
 
   // Listen for WebSocket connection status (only for shared service mode)
@@ -264,24 +368,14 @@ export default function CompactSlotWidget({
     };
   }, [cleanupOnUnmount, externalWsService]);
 
-  // Listen for global pause state changes from other components
-  useEffect(() => {
-    const handlePauseChange = (event: CustomEvent) => {
-      logger.log('CompactSlotWidget: Received pause state change:', event.detail.isPaused);
-      setIsClockPaused(event.detail.isPaused);
-    };
-
-    window.addEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-
-    return () => {
-      window.removeEventListener('clockPauseStateChanged', handlePauseChange as EventListener);
-    };
-  }, []);
-
   // Listen for epoch changes (e.g., from time travel)
   useEffect(() => {
     const handleEpochChange = (event: CustomEvent) => {
       logger.log('CompactSlotWidget: Received epoch change:', event.detail);
+      if (historical) {
+        refreshEpochRef.current?.();
+        return;
+      }
       if (event.detail.epoch !== undefined) {
         setEpoch(event.detail.epoch);
       }
@@ -298,7 +392,7 @@ export default function CompactSlotWidget({
     return () => {
       window.removeEventListener('epochChanged', handleEpochChange as EventListener);
     };
-  }, []);
+  }, [historical]);
 
   // Blinking animation when clock is paused
   useEffect(() => {
