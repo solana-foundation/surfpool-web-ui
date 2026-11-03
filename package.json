@@ -25,7 +25,8 @@
       "hono": "4.13.11",
       "@types/react": "^19.0.0",
       "@types/react-dom": "^19.0.0",
-      "@ai-sdk/provider-utils@<3.0.28": "3.0.30"
+      "@ai-sdk/provider-utils@<3.0.28": "3.0.30",
+      "@babel/core@<7.29.6": "^7.29.6"
     }
   },
   "packageManager": "pnpm@10.14.0"
