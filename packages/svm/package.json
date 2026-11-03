@@ -10,7 +10,7 @@
     "clean": "rm -rf .turbo node_modules"
   },
   "peerDependencies": {
-    "next": "^15.5.26",
+    "next": "^15.5.28",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
