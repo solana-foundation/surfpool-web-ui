@@ -2406,6 +2406,13 @@ export default function ScenarioEditor({
                                                   // Parse based on type
                                                   if (inputType === 'number') {
                                                     newValue = toScenarioNumber(e.target.value);
+                                                    // The backend reads a 128-bit value past u64 only from a decimal string.
+                                                    if (
+                                                      newValue instanceof LosslessNumber &&
+                                                      (typeString === 'u128' || typeString === 'i128')
+                                                    ) {
+                                                      newValue = newValue.toString();
+                                                    }
                                                   } else if (
                                                     typeString.includes('array') ||
                                                     typeString.includes('vec') ||

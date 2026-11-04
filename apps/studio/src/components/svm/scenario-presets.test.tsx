@@ -11,6 +11,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={onPumpGraduationSelect}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={vi.fn()}
+        onPmmFairValueSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Pump graduation/i }));
@@ -26,6 +27,7 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={onPumpSwapPriceShockSelect}
         onPhoenixStateSelect={vi.fn()}
+        onPmmFairValueSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /PumpSwap price shock/i }));
@@ -41,10 +43,27 @@ describe('ScenarioPresets', () => {
         onPumpGraduationSelect={vi.fn()}
         onPumpSwapPriceShockSelect={vi.fn()}
         onPhoenixStateSelect={onPhoenixStateSelect}
+        onPmmFairValueSelect={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: /Phoenix state/i }));
 
     expect(onPhoenixStateSelect).toHaveBeenCalledOnce();
+  });
+
+  it('opens the PMM fair-value preset', () => {
+    const onPmmFairValueSelect = vi.fn();
+
+    render(
+      <ScenarioPresets
+        onPumpGraduationSelect={vi.fn()}
+        onPumpSwapPriceShockSelect={vi.fn()}
+        onPhoenixStateSelect={vi.fn()}
+        onPmmFairValueSelect={onPmmFairValueSelect}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /PMM fair value/i }));
+
+    expect(onPmmFairValueSelect).toHaveBeenCalledOnce();
   });
 });

@@ -5,7 +5,7 @@ import {
   getProtocolAiContext,
   resolveFeaturedAccount,
 } from './featured-accounts';
-import { SOLFI_FEATURED_MARKETS } from './solfi-markets';
+import { SOLFI_FEATURED_MARKETS } from './pmms/solfi';
 
 const [sol, usdt] = SOLFI_FEATURED_MARKETS;
 const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);

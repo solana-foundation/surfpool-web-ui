@@ -1,5 +1,5 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
-import { SOLFI_FEATURED } from './solfi-markets';
+import { SOLFI_FEATURED } from './pmms/solfi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */
