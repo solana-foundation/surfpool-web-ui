@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { getFeaturedAccounts, resolveFeaturedAccount } from '@/lib/featured-accounts';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
@@ -25,18 +26,17 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/solid';
 import { logger } from '@surfpool/shared';
-import { Combobox, ComboboxLabel, ComboboxOption, Input, Select, Switch } from '@surfpool/ui';
+import { Combobox, ComboboxLabel, ComboboxOption, Select, Switch } from '@surfpool/ui';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
-import { decodeRawLayoutAccountData, editedRawLayoutOverrides, getFieldsFromRawLayout } from './raw-layout-fields';
+import { getFieldsFromRawLayout } from './raw-layout-fields';
 import {
-  BISONFI_MARKET_OPTIONS,
   customValueOption,
   findOptionByTypedValue,
-  isBisonFiTemplate,
-  resolveBisonFiAccount,
   resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+  typedAccountOption,
 } from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
@@ -159,7 +159,6 @@ export default function ScenarioEditor({
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
   const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
-  const [usesCustomBisonFiAddress, setUsesCustomBisonFiAddress] = useState(false);
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -173,6 +172,8 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const featuredAccounts = getFeaturedAccounts(selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(featuredAccounts && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isStartingPlay, setIsStartingPlay] = useState<boolean>(false);
@@ -182,11 +183,6 @@ export default function ScenarioEditor({
 
   const accountRequestRef = useRef(0);
   const isFirstSlotsChangeRef = useRef(true);
-  const accountLoadRequestRef = useRef(0);
-  const accountDataBisonFiAddressRef = useRef('');
-  const pendingBisonFiAddressRef = useRef('');
-  const isBisonFiAccountSelection = isBisonFiTemplate(selectedAction?.id);
-  const isAddressSelectionMissing = isBisonFiAccountSelection && selectedAccountPubkey.trim() === '';
 
   // Reset first slots change flag when scenario changes
   React.useEffect(() => {
@@ -629,16 +625,46 @@ export default function ScenarioEditor({
     return result;
   };
 
-  const loadAccountData = async (address: string, template: any, requestId: number) => {
+  // Register IDL and fetch account data when an action is selected
+  const handleActionSelect = async (action: Action, accountPubkey?: string) => {
+    const requestId = ++accountRequestRef.current;
+    setSelectedAction(action);
+    setAccountData({});
+    setSelectedAccountPubkey(getFeaturedAccounts(action.template?.id) ? (accountPubkey ?? '') : '');
+    setModifiedFields(new Set()); // Clear modified fields when loading new action
+    setArrayEntryIndex({});
+    setFetchBeforeUse(false); // Reset fetch before use toggle
+
+    if (!action.template?.idl || !action.template?.address) {
+      console.warn('Action template missing IDL or address');
+      setLoadingAccountData(false);
+      return;
+    }
+
     setLoadingAccountData(true);
 
     try {
-      logger.log('🔍 Fetching account info for address:', address);
+      // Step 1: Register the IDL using slot 1
+      logger.log('📝 Registering IDL for', action.template.address);
+
+      // Extract address string
+      let addressString;
+      if (typeof action.template.address === 'string') {
+        addressString = action.template.address;
+      } else if (action.template.address && typeof action.template.address === 'object') {
+        addressString =
+          action.template.address.pubkey || action.template.address.address || action.template.address.value;
+      }
+      // A PDA template, or one that leaves the account to the override, reads the saved account.
+      if (accountPubkey && !addressString) addressString = accountPubkey;
+
+      // Step 1: Fetch account info, parsed as JSON when the template edits account fields
+      logger.log('🔍 Fetching account info for address:', addressString);
 
       // A template whose properties are all inputs or dynamic_refs edits no field of the account, so
       // its decoded data would only be sent back as override values.
       // An empty slice still pulls the account into the local VM for Play, without decoding it.
-      const properties = template?.properties ?? [];
+      const properties = action.template.properties ?? [];
       const inputsOnly =
         properties.length > 0 &&
         properties.every(
@@ -650,10 +676,10 @@ export default function ScenarioEditor({
         id: 2,
         method: 'getAccountInfo',
         params: [
-          address,
+          addressString,
           inputsOnly
             ? { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }
-            : { commitment: 'confirmed', encoding: template?.rawLayout ? 'base64' : 'jsonParsed' },
+            : { commitment: 'confirmed', encoding: 'jsonParsed' },
         ],
       };
 
@@ -667,109 +693,19 @@ export default function ScenarioEditor({
 
       const accountInfoData = await accountInfoResponse.json();
       logger.log('✅ Account info received:', accountInfoData);
-      if (requestId !== accountLoadRequestRef.current) return false;
+      if (requestId !== accountRequestRef.current) return;
 
-      const responseData = accountInfoData.result?.value?.data;
-      if (responseData?.parsed) {
-        const parsed = responseData.parsed;
+      if (accountInfoData.result?.value?.data?.parsed) {
+        // Populate accountData with the parsed data
+        const parsed = accountInfoData.result.value.data.parsed;
         logger.log('📊 Parsed account data:', parsed);
         setAccountData(parsed);
-        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
-      } else if (template?.rawLayout && Array.isArray(responseData) && typeof responseData[0] === 'string') {
-        const binary = atob(responseData[0]);
-        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-        const decoded = decodeRawLayoutAccountData(template, bytes);
-        logger.log('📊 Decoded raw-layout account data:', decoded);
-        setAccountData(decoded);
-        if (isBisonFiTemplate(template?.id)) accountDataBisonFiAddressRef.current = address;
       }
 
-      return true;
+      setLoadingAccountData(false);
     } catch (error) {
-      if (requestId === accountLoadRequestRef.current) {
-        console.error('Error loading account data:', error);
-      }
-      return requestId === accountLoadRequestRef.current;
-    } finally {
-      if (requestId === accountLoadRequestRef.current) {
-        if (pendingBisonFiAddressRef.current === address) pendingBisonFiAddressRef.current = '';
-        setLoadingAccountData(false);
-      }
-    }
-  };
-
-  // Register IDL and fetch account data when an action is selected
-  const handleActionSelect = async (action: Action, savedAccount?: any) => {
-    const requestId = ++accountLoadRequestRef.current;
-    setLoadingAccountData(false);
-    setSelectedAction(action);
-    setAccountData({});
-    const usesBisonFiMarket = isBisonFiTemplate(action.id);
-    const savedPubkey =
-      typeof savedAccount === 'string'
-        ? savedAccount
-        : typeof savedAccount?.pubkey === 'string'
-          ? savedAccount.pubkey
-          : '';
-    const selectedPubkey = usesBisonFiMarket ? savedPubkey : '';
-    accountDataBisonFiAddressRef.current = '';
-    pendingBisonFiAddressRef.current = '';
-    setSelectedAccountPubkey(selectedPubkey);
-    setUsesCustomBisonFiAddress(
-      usesBisonFiMarket &&
-        savedPubkey !== '' &&
-        !BISONFI_MARKET_OPTIONS.some((option) => String(option.value) === savedPubkey)
-    );
-    setModifiedFields(new Set()); // Clear modified fields when loading new action
-    setArrayEntryIndex({});
-    setFetchBeforeUse(false); // Reset fetch before use toggle
-
-    if (!action.template?.address) {
-      console.warn('Action template missing address');
-      return requestId === accountLoadRequestRef.current;
-    }
-
-    // Extract address string
-    let addressString;
-    if (usesBisonFiMarket) {
-      addressString = selectedPubkey;
-    } else if (typeof action.template.address === 'string') {
-      addressString = action.template.address;
-    } else if (action.template.address && typeof action.template.address === 'object') {
-      addressString =
-        action.template.address.pubkey || action.template.address.address || action.template.address.value;
-    }
-    // A PDA template, or one that leaves the account to the override, reads the saved account.
-    if (!usesBisonFiMarket && savedPubkey && !addressString) addressString = savedPubkey;
-
-    if (!addressString) return requestId === accountLoadRequestRef.current;
-
-    if (usesBisonFiMarket) pendingBisonFiAddressRef.current = addressString;
-
-    return loadAccountData(addressString, action.template, requestId);
-  };
-
-  const changeBisonFiAccount = (pubkey: string, custom: boolean, fetchAccount: boolean) => {
-    if (
-      fetchAccount &&
-      (pubkey === accountDataBisonFiAddressRef.current || pubkey === pendingBisonFiAddressRef.current)
-    )
-      return;
-
-    const requestId = ++accountLoadRequestRef.current;
-    setSelectedAccountPubkey(pubkey);
-    setUsesCustomBisonFiAddress(custom);
-    // Values entered for one pool must never be carried silently to another pool.
-    setAccountData({});
-    accountDataBisonFiAddressRef.current = '';
-    setModifiedFields(new Set());
-    setLoadingAccountData(false);
-
-    if (fetchAccount && pubkey) {
-      pendingBisonFiAddressRef.current = pubkey;
-      void loadAccountData(pubkey, selectedAction?.template, requestId);
-    } else {
-      pendingBisonFiAddressRef.current = '';
+      console.error('Error loading account data:', error);
+      if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
   };
 
@@ -849,10 +785,10 @@ export default function ScenarioEditor({
                 actionId: action.id,
                 protocol: protocol.title,
                 action: action.title,
-                overrides: editedRawLayoutOverrides(action.template, accountData, modifiedFields),
+                overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: resolveBisonFiAccount(action.id, action.template?.address, selectedAccountPubkey),
+                account: resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -889,19 +825,20 @@ export default function ScenarioEditor({
                     actionId: action.id,
                     protocol: protocol.title,
                     action: action.title,
-                    overrides: editedRawLayoutOverrides(action.template, accountData, modifiedFields),
+                    overrides: accountData,
                     modifiedFields: Array.from(modifiedFields),
                     fetchBeforeUse: fetchBeforeUse,
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account.
-                    account: isBisonFiTemplate(action.id)
-                      ? resolveBisonFiAccount(action.id, action.template?.address, selectedAccountPubkey)
-                      : leavesAccountToOverride(action.template?.address) &&
-                          existingAction.actionId === action.id &&
-                          existingAction.account?.pubkey
+                    // fields such as a token or fee tier pick the new account. A featured-account template
+                    // saves the account picked in the editor.
+                    account:
+                      !getFeaturedAccounts(action.template?.id) &&
+                      leavesAccountToOverride(action.template?.address) &&
+                      existingAction.actionId === action.id &&
+                      existingAction.account?.pubkey
                         ? existingAction.account
-                        : action.template?.address,
+                        : resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
                   }
                 : existingAction
             ),
@@ -1408,11 +1345,13 @@ export default function ScenarioEditor({
                                                   if (foundAction) {
                                                     setSelectedAction(foundAction);
                                                     // Fetch account data for this action
-                                                    const selectionIsCurrent = await handleActionSelect(
+                                                    const loading = handleActionSelect(
                                                       foundAction,
-                                                      action.account
+                                                      action.account?.pubkey
                                                     );
-                                                    if (!selectionIsCurrent) return;
+                                                    const requestId = accountRequestRef.current;
+                                                    await loading;
+                                                    if (requestId !== accountRequestRef.current) return;
 
                                                     // Restore the overrides and modified fields after loading default data
                                                     // Start with overrides data
@@ -1628,12 +1567,6 @@ export default function ScenarioEditor({
                                                     }
 
                                                     setAccountData(restoredData);
-                                                    if (
-                                                      isBisonFiTemplate(foundAction.id) &&
-                                                      typeof action.account?.pubkey === 'string'
-                                                    ) {
-                                                      accountDataBisonFiAddressRef.current = action.account.pubkey;
-                                                    }
 
                                                     // Combine action.modifiedFields with any restored constant_ref fields
                                                     const allModifiedFields = new Set(action.modifiedFields || []);
@@ -1985,77 +1918,6 @@ export default function ScenarioEditor({
                                     updates, and dynamic balances.
                                   </p>
                                 </div>
-                                {isBisonFiAccountSelection &&
-                                  (() => {
-                                    const selectedMarket = BISONFI_MARKET_OPTIONS.find(
-                                      (option) => String(option.value) === selectedAccountPubkey
-                                    );
-                                    const customMarketOption = {
-                                      id: 'custom-bisonfi-market',
-                                      label: 'Custom market address',
-                                      value: '__custom__',
-                                      description: 'Enter a BisonFi v3 pool address',
-                                    };
-                                    const marketOptions = [customMarketOption, ...BISONFI_MARKET_OPTIONS];
-
-                                    return (
-                                      <div className="mb-6 space-y-3 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
-                                        <div>
-                                          <label className="block text-sm font-medium text-zinc-300">Market</label>
-                                          <p className="mt-1 text-xs text-zinc-500">
-                                            Choose a commonly used BisonFi market or enter another v3 pool address.
-                                          </p>
-                                        </div>
-                                        <Combobox
-                                          aria-label="BisonFi market"
-                                          value={
-                                            usesCustomBisonFiAddress ? customMarketOption : (selectedMarket ?? null)
-                                          }
-                                          onChange={(option: any) => {
-                                            if (option) {
-                                              const custom = option.value === '__custom__';
-                                              changeBisonFiAccount(custom ? '' : String(option.value), custom, !custom);
-                                            }
-                                          }}
-                                          options={marketOptions}
-                                          displayValue={(option: any) => option?.label || ''}
-                                          filter={(option: any, query: string) =>
-                                            [option.label, option.description, option.value]
-                                              .filter(Boolean)
-                                              .join(' ')
-                                              .toLowerCase()
-                                              .includes(query.toLowerCase())
-                                          }
-                                          placeholder="Search markets..."
-                                        >
-                                          {(option: any) => (
-                                            <ComboboxOption key={option.id} value={option}>
-                                              <ComboboxLabel>
-                                                <span className="font-medium">{option.label}</span>
-                                                {option.description && (
-                                                  <span className="ml-2 text-zinc-400">{option.description}</span>
-                                                )}
-                                              </ComboboxLabel>
-                                            </ComboboxOption>
-                                          )}
-                                        </Combobox>
-                                        {usesCustomBisonFiAddress && (
-                                          <Input
-                                            aria-label="Custom BisonFi market address"
-                                            value={selectedAccountPubkey}
-                                            onChange={(event) =>
-                                              changeBisonFiAccount(event.target.value.trim(), true, false)
-                                            }
-                                            onBlur={() => {
-                                              const address = selectedAccountPubkey.trim();
-                                              if (address) changeBisonFiAccount(address, true, true);
-                                            }}
-                                            placeholder="Enter a BisonFi v3 pool address..."
-                                          />
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
                                 {loadingAccountData ? (
                                   <div className="flex flex-1 items-center justify-center">
                                     <div className="flex flex-col items-center gap-3">
@@ -2550,7 +2412,7 @@ export default function ScenarioEditor({
                                       const renderConstantRefFields = () => {
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
-                                        const constantRefProps = rawProperties
+                                        const propertyConstantRefs = rawProperties
                                           .filter((prop: any) => {
                                             if (typeof prop === 'string') return false;
                                             if (prop.type === 'constant_ref')
@@ -2581,6 +2443,12 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
+                                        const constantRefProps = [
+                                          ...(featuredAccounts
+                                            ? [{ name: '__account__', type: 'constant_ref', isAccountSelector: true }]
+                                            : []),
+                                          ...propertyConstantRefs,
+                                        ];
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2591,12 +2459,16 @@ export default function ScenarioEditor({
                                           currentValue,
                                           isModified,
                                           takesCustomValues,
+                                          onValueChange,
+                                          acceptsTypedAddress,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                           takesCustomValues: boolean;
+                                          onValueChange: (value: string) => void;
+                                          acceptsTypedAddress: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2612,14 +2484,15 @@ export default function ScenarioEditor({
                                               value={selectedOption}
                                               onChange={(option: any) => {
                                                 if (option) {
-                                                  setValue(fieldPath, option.value);
+                                                  onValueChange(String(option.value));
                                                 }
                                               }}
                                               options={options}
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
-                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                                const symbol =
+                                                  option.metadata?.symbol || option.label || option.id?.toUpperCase();
                                                 return symbol;
                                               }}
                                               filter={(option: any, query: string) => {
@@ -2639,7 +2512,13 @@ export default function ScenarioEditor({
                                                   value.includes(q)
                                                 );
                                               }}
-                                              customOption={takesCustomValues ? customOptionFor : undefined}
+                                              customOption={
+                                                acceptsTypedAddress
+                                                  ? (query: string) => typedAccountOption(query, options)
+                                                  : takesCustomValues
+                                                    ? customOptionFor
+                                                    : undefined
+                                              }
                                               immediate={takesCustomValues}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                               aria-label={constantDef.label}
@@ -2662,7 +2541,9 @@ export default function ScenarioEditor({
                                                     )}
                                                     <ComboboxLabel>
                                                       <span className="font-medium">
-                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                        {option.metadata?.symbol ||
+                                                          option.label ||
+                                                          option.id?.toUpperCase()}
                                                       </span>
                                                       {option.description && (
                                                         <span className="ml-2 text-zinc-400">{option.description}</span>
@@ -2678,20 +2559,34 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              PDA Configuration
+                                              {featuredAccounts ? 'Account selection' : 'PDA Configuration'}
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = prop.constantDef;
+                                              const constantDef = prop.isAccountSelector
+                                                ? featuredAccounts
+                                                : prop.constantDef;
                                               const fieldPath = prop.name;
-                                              const rawValue = getValue(fieldPath);
+                                              const rawValue = prop.isAccountSelector
+                                                ? selectedAccountPubkey
+                                                : getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
-                                              const isModified = modifiedFields.has(fieldPath);
+                                              const isModified = prop.isAccountSelector
+                                                ? currentValue !== ''
+                                                : modifiedFields.has(fieldPath);
+                                              const onValueChange = prop.isAccountSelector
+                                                ? (pubkey: string) => setSelectedAccountPubkey(pubkey)
+                                                : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
-                                              const useCombobox = isLiveList || constantDef.options.length > 20;
+                                              const useCombobox =
+                                                isLiveList ||
+                                                shouldUseConstantCombobox(
+                                                  constantDef.options.length,
+                                                  Boolean(prop.isAccountSelector)
+                                                );
                                               // A saved value the catalog lacks stays selectable as its custom option.
                                               const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
@@ -2721,12 +2616,14 @@ export default function ScenarioEditor({
                                                       currentValue={currentValue}
                                                       isModified={isModified}
                                                       takesCustomValues={isLiveList}
+                                                      onValueChange={onValueChange}
+                                                      acceptsTypedAddress={Boolean(prop.isAccountSelector)}
                                                     />
                                                   ) : (
                                                     <Select
                                                       value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
-                                                        setValue(fieldPath, e.target.value);
+                                                        onValueChange(e.target.value);
                                                       }}
                                                       className={
                                                         isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
@@ -2804,7 +2701,12 @@ export default function ScenarioEditor({
 
                                 {/* Add/Update Action Button - Right Aligned */}
                                 {!loadingAccountData && (
-                                  <div className="flex justify-end">
+                                  <div className="flex flex-col items-end gap-2">
+                                    {isAddressSelectionMissing && (
+                                      <p className="text-right text-sm text-amber-400">
+                                        Select a target account above before adding this override.
+                                      </p>
+                                    )}
                                     <button
                                       onClick={() => {
                                         if (selectedSlotId && selectedProtocol && selectedAction) {
@@ -2826,7 +2728,6 @@ export default function ScenarioEditor({
                                           setSelectedAction(null);
                                           setAccountData({});
                                           setSelectedAccountPubkey('');
-                                          setUsesCustomBisonFiAddress(false);
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);

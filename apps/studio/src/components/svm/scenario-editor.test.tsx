@@ -50,14 +50,6 @@ const bisonFiTemplate = {
   properties: [{ path: 'base_reserve', offset: 0, encoding: 'u64' }],
 };
 
-const rawU64 = (value: bigint) => {
-  const bytes = new Uint8Array(8);
-  for (let index = 0; index < bytes.length; index++) {
-    bytes[index] = Number((value >> BigInt(index * 8)) & BigInt(0xff));
-  }
-  return btoa(String.fromCharCode(...bytes));
-};
-
 const fetchMock = vi.fn();
 
 beforeEach(() => {
@@ -99,132 +91,6 @@ async function openEditor(
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
 }
-
-async function openBisonFiEditor(values: Record<string, unknown>, account: { pubkey: string }) {
-  fetchMock.mockImplementation(async (url: string) => ({
-    ok: true,
-    json: async () =>
-      url.endsWith('/templates') ? [bisonFiTemplate] : { result: { value: { data: [rawU64(BigInt(7)), 'base64'] } } },
-  }));
-  render(
-    <ScenarioEditor
-      scenarioId="bisonfi-test"
-      initialSteps={[
-        {
-          id: 'slot',
-          name: 'Slot',
-          type: 'slot',
-          actions: [
-            {
-              protocolId: 'bisonfi',
-              actionId: bisonFiTemplate.id,
-              protocol: 'BisonFi',
-              action: bisonFiTemplate.name,
-              account,
-              overrides: values,
-            },
-          ],
-        },
-      ]}
-    />
-  );
-  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  fireEvent.click(await screen.findByTitle(`BisonFi: ${bisonFiTemplate.name}`));
-  fireEvent.click(await screen.findByText(bisonFiTemplate.name));
-}
-
-it('keeps a saved BisonFi market and decodes its raw-layout account', async () => {
-  const account = { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' };
-  await openBisonFiEditor({ base_reserve: '3' }, account);
-
-  const reserve = await screen.findByPlaceholderText('Enter base_reserve...');
-  await waitFor(() => expect(reserve).toHaveValue(3));
-  const rpc = fetchMock.mock.calls.find(([url]) => url === 'http://rpc');
-  expect(JSON.parse(rpc![1].body).params).toEqual([account.pubkey, { commitment: 'confirmed', encoding: 'base64' }]);
-
-  fireEvent.change(reserve, { target: { value: '5' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    const override = JSON.parse(patch![1].body).overrides[0];
-    expect(override.account).toEqual(account);
-    expect(override.values.base_reserve).toBe(5);
-  });
-});
-
-it('ignores an older BisonFi pool response after the user switches markets', async () => {
-  const first = '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo';
-  const second = 'Hv8FoJFsrQhoyrR6Lcz4KFcpqNHU1Kxj2yaFDKU6vJdp';
-  const pending: Array<{ account: string; resolve: (value: bigint) => void }> = [];
-  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-    if (url.endsWith('/templates')) {
-      return Promise.resolve({ ok: true, json: async () => [bisonFiTemplate] });
-    }
-    if (url !== 'http://rpc') return Promise.resolve({ ok: true, json: async () => ({}) });
-    return new Promise((resolve) => {
-      pending.push({
-        account: JSON.parse(`${init?.body}`).params[0],
-        resolve: (value) =>
-          resolve({
-            ok: true,
-            json: async () => ({ result: { value: { data: [rawU64(value), 'base64'] } } }),
-          }),
-      });
-    });
-  });
-  render(
-    <ScenarioEditor
-      scenarioId="bisonfi-race-test"
-      initialSteps={[
-        {
-          id: 'slot',
-          name: 'Slot',
-          type: 'slot',
-          actions: [
-            {
-              protocolId: 'bisonfi',
-              actionId: bisonFiTemplate.id,
-              protocol: 'BisonFi',
-              action: bisonFiTemplate.name,
-              account: { pubkey: first },
-              overrides: { base_reserve: '3' },
-            },
-          ],
-        },
-      ]}
-    />
-  );
-  fireEvent.click(await screen.findByTitle(`BisonFi: ${bisonFiTemplate.name}`));
-  fireEvent.click(await screen.findByText(bisonFiTemplate.name));
-  await waitFor(() => expect(pending).toHaveLength(1));
-
-  // Reopening a saved action waits for its account before showing the editor. Once open, market
-  // changes can overlap: switch to the second market, then back to the first while it is loading.
-  pending[0].resolve(BigInt(7));
-  await screen.findByPlaceholderText('Enter base_reserve...');
-
-  fireEvent.click(screen.getByRole('button', { name: 'deSECZ / USDC' }));
-  await waitFor(() => expect(pending).toHaveLength(2));
-  fireEvent.click(screen.getByRole('button', { name: 'SOL / USDC' }));
-  await waitFor(() => expect(pending).toHaveLength(3));
-  expect(pending.map(({ account }) => account)).toEqual([first, second, first]);
-
-  pending[2].resolve(BigInt(11));
-  const reserve = await screen.findByPlaceholderText('Enter base_reserve...');
-  await waitFor(() => expect(reserve).toHaveValue(11));
-  pending[1].resolve(BigInt(9));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(reserve).toHaveValue(11);
-
-  fireEvent.change(reserve, { target: { value: '13' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-  await waitFor(() => {
-    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].account).toEqual({ pubkey: first });
-  });
-});
 
 const savedOverride = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Update Action' }));
@@ -523,22 +389,15 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
   });
 });
 
-it('saves only the BisonFi fields the user edited, not every value decoded from the pool', async () => {
-  const template = {
-    ...bisonFiTemplate,
-    properties: [
-      { path: 'base_reserve', offset: 0, encoding: 'u64' },
-      { path: 'quote_reserve', offset: 8, encoding: 'u64' },
-    ],
-  };
-  const reserves = btoa(atob(rawU64(BigInt(7))) + atob(rawU64(BigInt(9))));
+it('keeps a saved BisonFi market and its values without loading the pool', async () => {
+  const account = { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' };
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
-    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: { data: [reserves, 'base64'] } } }),
+    json: async () => (url.endsWith('/templates') ? [bisonFiTemplate] : {}),
   }));
   render(
     <ScenarioEditor
-      scenarioId="bisonfi-edited-only-test"
+      scenarioId="bisonfi-test"
       initialSteps={[
         {
           id: 'slot',
@@ -547,10 +406,10 @@ it('saves only the BisonFi fields the user edited, not every value decoded from 
           actions: [
             {
               protocolId: 'bisonfi',
-              actionId: template.id,
+              actionId: bisonFiTemplate.id,
               protocol: 'BisonFi',
-              action: template.name,
-              account: { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' },
+              action: bisonFiTemplate.name,
+              account,
               overrides: { base_reserve: '3' },
             },
           ],
@@ -558,20 +417,21 @@ it('saves only the BisonFi fields the user edited, not every value decoded from 
       ]}
     />
   );
-  fireEvent.click(await screen.findByTitle(`BisonFi: ${template.name}`));
-  fireEvent.click(await screen.findByText(template.name));
-  await screen.findByPlaceholderText('Enter base_reserve...');
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`BisonFi: ${bisonFiTemplate.name}`));
+  fireEvent.click(await screen.findByText(bisonFiTemplate.name));
 
-  // Switching markets loads both reserves from the pool; only base_reserve is then edited.
-  fireEvent.click(screen.getByRole('button', { name: 'deSECZ / USDC' }));
-  const quote = await screen.findByPlaceholderText('Enter quote_reserve...');
-  await waitFor(() => expect(quote).toHaveValue(9));
-  fireEvent.change(screen.getByPlaceholderText('Enter base_reserve...'), { target: { value: '5' } });
+  const reserve = await screen.findByPlaceholderText('Enter base_reserve...');
+  await waitFor(() => expect(reserve).toHaveValue(3));
+  expect(fetchMock.mock.calls.some(([url]) => url === 'http://rpc')).toBe(false);
+
+  fireEvent.change(reserve, { target: { value: '5' } });
   fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
-
   await waitFor(() => {
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(patch).toBeDefined();
-    expect(JSON.parse(patch![1].body).overrides[0].values).toEqual({ base_reserve: 5 });
+    const override = JSON.parse(patch![1].body).overrides[0];
+    expect(override.account).toEqual(account);
+    expect(override.values.base_reserve).toBe(5);
   });
 });

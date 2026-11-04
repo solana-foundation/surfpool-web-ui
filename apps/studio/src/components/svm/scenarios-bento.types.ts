@@ -56,9 +56,9 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
-    label: 'Prop AMM Arbitrage',
+    label: 'Cross-Pair Arbitrage',
     prompt:
-      'Keep BisonFi quoting while its SOL/USDC mid sits 2% above Orca Whirlpool, so buying on Whirlpool and selling into BisonFi clears the fees on both venues',
+      "Keep BisonFi's SOL/USDC pool at its current price and set its SOL/USDT pool 1.5% higher, while USDT still trades at $1 on Orca Whirlpool, so buying SOL for USDC on BisonFi, selling it for USDT on BisonFi and swapping the USDT back to USDC on Whirlpool is profitable",
     icon: '🐃',
     protocols: ['bisonfi', 'whirlpool'],
   },

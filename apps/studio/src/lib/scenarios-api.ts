@@ -1,7 +1,7 @@
 import type { ScenarioBentoItem } from '@/components/svm/scenarios-bento.types';
-import { getProtocolAiContext } from '@/components/svm/token-selector-options';
 import { isSafeNumber, LosslessNumber, parse, stringify } from 'lossless-json';
 import { callMCPTool, fetchMCPTools } from './ai-client';
+import { getProtocolAiContext } from './featured-accounts';
 import { PROTOCOLS } from './protocol-icons';
 import type { Scenario } from './scenarios-data';
 

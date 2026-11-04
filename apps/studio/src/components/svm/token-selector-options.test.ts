@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BISONFI_MARKET_OPTIONS,
-  resolveBisonFiAccount,
   resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
   type TokenSelectorOption,
+  typedAccountOption,
 } from './token-selector-options';
 
 const catalogOptions: TokenSelectorOption[] = [
@@ -40,19 +40,25 @@ describe('resolveTokenSelectorOptions', () => {
   });
 });
 
-describe('BisonFi market selection', () => {
-  it('offers four distinct market accounts', () => {
-    expect(BISONFI_MARKET_OPTIONS).toHaveLength(4);
-    expect(new Set(BISONFI_MARKET_OPTIONS.map((option) => option.value)).size).toBe(4);
+describe('shouldUseConstantCombobox', () => {
+  it('uses the shared searchable protocol selector for account choices of any size', () => {
+    expect(shouldUseConstantCombobox(2, true)).toBe(true);
   });
 
-  it('uses the selected account for BisonFi without changing other templates', () => {
-    expect(resolveBisonFiAccount('bisonfi-spread', { pubkey: '' }, ' CustomPool111 ')).toEqual({
-      pubkey: 'CustomPool111',
-    });
-    expect(resolveBisonFiAccount('pyth-price', { pubkey: 'PythAccount' }, 'CustomPool111')).toEqual({
-      pubkey: 'PythAccount',
-    });
-    expect(resolveBisonFiAccount('bisonfi-depth', { pubkey: '' }, '   ')).toBeUndefined();
+  it('preserves the existing threshold for ordinary constant fields', () => {
+    expect(shouldUseConstantCombobox(2, false)).toBe(false);
+    expect(shouldUseConstantCombobox(21, false)).toBe(true);
+  });
+});
+
+describe('typedAccountOption', () => {
+  it('offers only a typed address the picker does not list', () => {
+    const market = 'FLckHLGMJy5gEoXWwcE68Nprde1D4araK4TGLw4pQq2n';
+    const unlisted = '9NkuAWB4LgCVFV77omEkJEjXqgV5PGupwMTu3B3pBRhc';
+    const listed: TokenSelectorOption[] = [{ id: market, label: 'SOL / USDC', value: market }];
+
+    expect(typedAccountOption(unlisted, listed)).toMatchObject({ label: 'Custom address', value: unlisted });
+    expect(typedAccountOption(market, listed)).toBeNull();
+    expect(typedAccountOption('SOL / USDC', listed)).toBeNull();
   });
 });

@@ -83,7 +83,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('Market Crash')).toBeInTheDocument();
     expect(screen.getByText('DEX Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Liquidation Arbitrage')).toBeInTheDocument();
-    expect(screen.getByText('Prop AMM Arbitrage')).toBeInTheDocument();
+    expect(screen.getByText('Cross-Pair Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Triangular Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Fresh Launch')).toBeInTheDocument();
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
@@ -92,15 +92,16 @@ describe('AIHeader', () => {
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
   });
 
-  it('loads the BisonFi and Whirlpool arbitrage prompt', () => {
+  it('loads the BisonFi cross-pair arbitrage prompt', () => {
     renderWithConfig(<AIHeader />);
 
-    fireEvent.click(screen.getByText('Prop AMM Arbitrage'));
+    fireEvent.click(screen.getByText('Cross-Pair Arbitrage'));
 
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('BisonFi');
     expect(prompt).toContain('Orca Whirlpool');
-    expect(prompt).toContain('2%');
+    expect(prompt).toContain('SOL/USDT');
+    expect(prompt).toContain('1.5%');
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
