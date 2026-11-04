@@ -46,7 +46,7 @@
     "tailwindcss": "^4.0.15",
     "typescript": "^5",
     "@vitest/coverage-v8": "^4.1.12",
-    "vite": "^6.4.4",
+    "vite": "^6.4.5",
     "vitest": "^4.1.12",
     "vite-plugin-svgr": "^4.5.0"
   }
