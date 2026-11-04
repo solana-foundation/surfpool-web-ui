@@ -248,10 +248,13 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
               const resultLine = `  Result: ${JSON.stringify(event.content.result, null, 2)}\n`;
               accumulatedResponse += resultLine;
               setStreamedResponse((prev) => prev + resultLine);
-              const scenarioId =
-                event.content.name === 'create_scenario'
-                  ? createdScenarioIdFromToolResult(event.content.result)
-                  : null;
+              const scenarioId = [
+                'create_scenario',
+                'create_pump_graduation_scenario',
+                'create_phoenix_collateral_scenario',
+              ].includes(event.content.name)
+                ? createdScenarioIdFromToolResult(event.content.result)
+                : null;
               if (scenarioId) {
                 onRefresh?.();
                 setTimeout(() => {
@@ -265,7 +268,6 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
             setAiError(event.content);
             break;
           case 'done':
-            onRefresh?.();
             break;
         }
       }
@@ -727,6 +729,8 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
               )}
 
               <button
+                type="button"
+                aria-label={isAiProcessing ? 'Stop scenario generation' : 'Generate scenario'}
                 onClick={() => (isAiProcessing ? handleAiCancel() : handleAiSubmit())}
                 disabled={!aiPrompt.trim() && !isAiProcessing}
                 className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-all ${

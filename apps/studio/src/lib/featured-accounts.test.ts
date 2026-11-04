@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BISONFI_FEATURED_MARKETS } from './bisonfi-markets';
-import { getFeaturedAccounts, getProtocolAiContext, resolveFeaturedAccount } from './featured-accounts';
+import {
+  featuredAccountInputs,
+  getFeaturedAccounts,
+  getProtocolAiContext,
+  resolveFeaturedAccount,
+} from './featured-accounts';
+import { BISONFI_FEATURED_MARKETS } from './pmms/bisonfi';
 
 describe('getFeaturedAccounts', () => {
   const [sol] = BISONFI_FEATURED_MARKETS;
@@ -20,6 +25,12 @@ describe('getFeaturedAccounts', () => {
     expect(resolveFeaturedAccount('bisonfi-spread', { pubkey: '' }, ` ${sol.market} `)).toEqual({ pubkey: sol.market });
     expect(resolveFeaturedAccount('bisonfi-depth', { pubkey: '' }, '   ')).toBeUndefined();
     expect(resolveFeaturedAccount('kamino-reserve-config', pda, '')).toBe(pda);
+  });
+});
+
+describe('featuredAccountInputs', () => {
+  it('fills nothing, since a BisonFi pool keeps itself alive', () => {
+    expect(featuredAccountInputs('bisonfi-depth', BISONFI_FEATURED_MARKETS[0].market)).toEqual({});
   });
 });
 
