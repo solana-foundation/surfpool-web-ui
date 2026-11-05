@@ -148,9 +148,6 @@ type PlayClock = 'paused' | 'running';
 const PAUSED_CLOCK_WARNING =
   'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
 
-const PLAY_BUTTON_CLASS =
-  'flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500';
-
 // A pubkey address the template leaves empty names no account; the override carries the one it targets.
 const leavesAccountToOverride = (address: any) =>
   !!address && typeof address === 'object' && !address.pda && !(address.pubkey || address.address || address.value);
@@ -193,8 +190,6 @@ export default function ScenarioEditor({
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, DynamicRefOption[]>>({});
 
   const accountRequestRef = useRef(0);
-  // The column already registered for the next slot, so a retried step only advances the clock
-  const registeredColumnRef = useRef<number | null>(null);
   // A ref, so a second click sees the Step in flight before the next render
   const steppingRef = useRef(false);
   const isFirstSlotsChangeRef = useRef(true);
@@ -876,7 +871,7 @@ export default function ScenarioEditor({
     setMouseX(null);
   };
 
-  // A time travel of one slot makes the surfnet produce it and apply the column registered for it
+  // A time travel of one slot makes the surfnet produce it and apply the column scheduled for it
   const advanceOneSlot = async () => {
     try {
       // Get current absolute slot from getEpochInfo
@@ -930,25 +925,17 @@ export default function ScenarioEditor({
     return false;
   };
 
-  // A second Step before the first one finishes would register the same column and skip the next one
+  // A second Step before the first one finishes would move the clock twice and skip a column
   const handleStepForward = async () => {
     if (steppingRef.current || currentPlaybackSlot >= slots.length - 1) return;
     steppingRef.current = true;
     setIsStepping(true);
     try {
       setIsExecuting(false);
-      const next = currentPlaybackSlot + 1;
-      const registered = registeredColumnRef.current === next || (await registerColumn(slots[next]));
-      if (!registered) {
+      if (!(await advanceOneSlot())) {
         setIsExecuting(true);
         return;
       }
-      registeredColumnRef.current = next;
-      if (playClock === 'paused' && !(await advanceOneSlot())) {
-        setIsExecuting(true);
-        return;
-      }
-      registeredColumnRef.current = null;
 
       setCurrentPlaybackSlot((prev) => prev + 1);
       // Start executing next slot after a brief delay
@@ -959,47 +946,49 @@ export default function ScenarioEditor({
     }
   };
 
-  // One column is registered at a time, when the user reaches it, so the surfnet never holds
-  // overrides for a slot it has not produced yet.
-  const registerColumn = async (slot: Slot) => {
-    const overrides = slot.actions.map((action) => {
-      // The backend expects flat dot-notation values ("price_message.price": 123);
-      // fields edited in the UI live nested and are reachable via modifiedFields
-      const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
+  // The surfnet lands column N on the Nth slot it produces after the registration
+  const registerScenario = async () => {
+    // Build scenario structure for RPC
+    const overrides = slots.flatMap((slot) =>
+      slot.actions.map((action) => {
+        // The backend expects flat dot-notation values ("price_message.price": 123);
+        // fields edited in the UI live nested and are reachable via modifiedFields
+        const flatValues = flattenOverrideValues(action.overrides, action.modifiedFields);
 
-      const original = (action.original ?? {}) as Partial<OverridePayload>;
-      const override: OverridePayload = {
-        // Fields the UI does not edit (enabled, future backend additions)
-        // come from the loaded override and pass through unchanged
-        ...original,
-        // Use existing overrideId if available, otherwise generate one
-        id: action.overrideId || `${action.actionId}_${slot.height}`,
-        templateId: action.actionId, // actionId IS the templateId
-        values: flatValues,
-        scenarioRelativeSlot: 0,
-        label: action.action,
-        enabled: original.enabled ?? true,
-        fetchBeforeUse: action.fetchBeforeUse || false,
-      };
+        const original = (action.original ?? {}) as Partial<OverridePayload>;
+        const override: OverridePayload = {
+          // Fields the UI does not edit (enabled, future backend additions)
+          // come from the loaded override and pass through unchanged
+          ...original,
+          // Use existing overrideId if available, otherwise generate one
+          id: action.overrideId || `${action.actionId}_${slot.height}`,
+          templateId: action.actionId, // actionId IS the templateId
+          values: flatValues,
+          scenarioRelativeSlot: slot.height, // 0-indexed to match backend
+          label: action.action,
+          enabled: original.enabled ?? true,
+          fetchBeforeUse: action.fetchBeforeUse || false,
+        };
 
-      // Only include account if it exists, don't send default values
-      if (action.account) {
-        override.account = action.account;
-      }
+        // Only include account if it exists, don't send default values
+        if (action.account) {
+          override.account = action.account;
+        }
 
-      return override;
-    });
+        return override;
+      })
+    );
 
     const scenario = {
       id: scenarioId,
-      name: `${scenarioName} · column ${slot.height + 1}/${slots.length}`,
+      name: scenarioName,
       description: scenarioDescription,
       overrides,
       tags: [],
     };
 
     try {
-      logger.log('📤 Registering column', slot.height, 'of scenario:', scenario);
+      logger.log('📤 Registering scenario:', scenario);
       const registerResponse = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1028,34 +1017,32 @@ export default function ScenarioEditor({
     }
   };
 
-  // A running clock produces the registered column's slot by itself, so only a paused one is stepped
+  // A paused clock lands one column per step; a running one produces the plan's slots by itself
   const startPlay = async (clock: PlayClock) => {
-    // A clock paused from the header would never produce the registered column's slot
-    if (clock === 'running' && !(await setSurfnetClockPaused(rpcUrl, false))) {
-      console.error('Error resuming clock');
-      return;
-    }
-
-    const [firstSlot] = slots;
-    if (firstSlot && !(await registerColumn(firstSlot))) {
-      return;
-    }
-
     if (clock === 'paused') {
-      if (await setSurfnetClockPaused(rpcUrl, true)) {
-        logger.log('🎬 Clock paused after scenario registration');
-      } else {
+      // Paused before the registration, so no column lands before its step
+      if (!(await setSurfnetClockPaused(rpcUrl, true))) {
         console.error('Error pausing clock');
+        return;
       }
-
-      if (firstSlot && !(await advanceOneSlot())) {
+      if (!(await registerScenario()) || (slots.length > 0 && !(await advanceOneSlot()))) {
         await resumeClock();
         return;
       }
+      setCurrentPlaybackSlot(0);
+    } else {
+      // A clock paused from the header would never produce the plan's slots
+      if (!(await setSurfnetClockPaused(rpcUrl, false))) {
+        console.error('Error resuming clock');
+        return;
+      }
+      if (!(await registerScenario())) {
+        return;
+      }
+      setCurrentPlaybackSlot(Math.max(slots.length - 1, 0));
     }
 
     setPlayClock(clock);
-    setCurrentPlaybackSlot(0);
     setIsExecuting(true);
     setMode('play');
   };
@@ -1079,7 +1066,6 @@ export default function ScenarioEditor({
     if (playClock === 'paused') {
       await resumeClock();
     }
-    registeredColumnRef.current = null;
     setMode('read');
     setIsExecuting(false);
     setCurrentPlaybackSlot(0);
@@ -2965,7 +2951,7 @@ export default function ScenarioEditor({
                       <Dropdown>
                         <DropdownButton
                           as="button"
-                          className={PLAY_BUTTON_CLASS}
+                          className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-white transition-all hover:scale-110 hover:bg-pink-400 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100 disabled:hover:bg-pink-500"
                           disabled={isStartingPlay}
                           aria-busy={isStartingPlay}
                           title={isStartingPlay ? 'Preparing scenario…' : 'Play scenario'}
@@ -2978,10 +2964,10 @@ export default function ScenarioEditor({
                         </DropdownButton>
                         <DropdownMenu anchor="top end">
                           <DropdownItem onClick={handlePlayPaused}>
-                            <DropdownLabel>Play with paused clock</DropdownLabel>
+                            <DropdownLabel>Pause clock and step through slots</DropdownLabel>
                           </DropdownItem>
                           <DropdownItem onClick={handlePlayRunning}>
-                            <DropdownLabel>Play with running clock</DropdownLabel>
+                            <DropdownLabel>Run clock and play all slots</DropdownLabel>
                           </DropdownItem>
                         </DropdownMenu>
                       </Dropdown>
