@@ -35,6 +35,11 @@ vi.mock('@surfpool/ui', async () => ({
   CheckboxGroup: ({ children }: any) => <div>{children}</div>,
   Description: ({ children }: any) => <span>{children}</span>,
   Label: ({ children }: any) => <span>{children}</span>,
+  Switch: ({ onChange, color, ...props }: any) => {
+    const handleChange = (event: any) => onChange(event.target.checked);
+
+    return <input type="checkbox" role="switch" {...props} onChange={handleChange} />;
+  },
   Combobox: (await import('@/test-utils')).MockCombobox,
   ComboboxDescription: ({ children }: any) => <span>{children}</span>,
   ComboboxLabel: ({ children }: any) => <span>{children}</span>,
@@ -149,7 +154,12 @@ describe('PhoenixStateDialog', () => {
     // (highRiskMargin + backstopMargin) / 2, rounded toward zero
     const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '450' });
     await waitFor(() =>
-      expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], undefined)
+      expect(createMock).toHaveBeenCalledWith(
+        'http://studio',
+        [prepared(TRADER), prepared(OTHER_TRADER)],
+        undefined,
+        false
+      )
     );
   });
 
@@ -188,7 +198,7 @@ describe('PhoenixStateDialog', () => {
     // effectiveCollateral before the moves - after them + (backstopMargin + maintenanceMargin) / 2 after them
     const prepared = (trader: string) => expect.objectContaining({ trader, collateral: '1343' });
     await waitFor(() =>
-      expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], moves)
+      expect(createMock).toHaveBeenCalledWith('http://studio', [prepared(TRADER), prepared(OTHER_TRADER)], moves, false)
     );
     const loadedMoves = vi.mocked(fetchPhoenixTraderPositions).mock.calls.map((call) => call[3]);
     expect(loadedMoves).toEqual([undefined, undefined, moves, moves]);
@@ -230,7 +240,7 @@ describe('PhoenixStateDialog', () => {
 
     // Healthy before the move from 908 after it, liquidatable below 1000: the middle is 954, 947 before the move.
     const prepared = expect.objectContaining({ trader: TRADER, collateral: '947' });
-    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', [prepared], expect.any(Array)));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', [prepared], expect.any(Array), false));
   });
 
   // A move too small to cross leaves no collateral both healthy before it and liquidatable after it; one that
@@ -308,7 +318,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'AMAT', '31350', false);
     });
   });
 
@@ -336,7 +346,7 @@ describe('PhoenixStateDialog', () => {
     expect(screen.getByLabelText('Phoenix market')).toHaveValue('XYZ');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'XYZ', '1000', false);
     });
   });
 
@@ -357,7 +367,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000');
+      expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '10000', false);
       expect(onCreated).toHaveBeenCalledWith('maintenance');
     });
   });
@@ -382,7 +392,7 @@ describe('PhoenixStateDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ETH' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
     await waitFor(() => {
-      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345');
+      expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'ETH', '12345', false);
     });
   });
 
@@ -439,7 +449,25 @@ describe('PhoenixStateDialog', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '2001'));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith('http://studio', 'SOL', '2001', false));
+  });
+
+  it('fetches each account before use when the switch is on', async () => {
+    let finishLoading!: (options: DynamicRefOption[]) => void;
+    fetchSymbolsMock.mockReturnValue(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      })
+    );
+    createMarketMoveMock.mockResolvedValue({ id: 'fetched' });
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Target price'), { target: { value: '12345' } });
+
+    await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
+    fireEvent.click(screen.getByRole('switch', { name: 'Fetch before use' }));
+    expect(screen.getByText(/Play fetches each account from the upstream datasource/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345', true));
   });
 
   it('keeps an amount typed while markets load in the ticks it was typed in', async () => {
@@ -455,7 +483,7 @@ describe('PhoenixStateDialog', () => {
 
     await act(async () => finishLoading([{ value: 'BTC', markTicks: 85957, tickSize: 100, baseLotDecimals: 4 }]));
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenCalledWith('http://studio', 'BTC', '12345', false));
   });
 
   it('converts percent and USD inputs to the raw values the backend takes', async () => {
@@ -475,18 +503,18 @@ describe('PhoenixStateDialog', () => {
     };
     submit('Target price', '-10');
     expect(screen.getByText('$85,957 → $77,361 (-10%), 77361 ticks')).toBeInTheDocument();
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '77361', false));
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'usd' } });
     submit('Target price', '85000.4');
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'BTC', '85000', false));
     fireEvent.click(screen.getByRole('button', { name: 'kBONK' }));
     submit('Target price', '0.000015');
-    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500'));
+    await waitFor(() => expect(createMarketMoveMock).toHaveBeenLastCalledWith('http://studio', 'kBONK', '1500', false));
 
     fireEvent.click(screen.getByRole('button', { name: 'BTC' }));
     fireEvent.change(screen.getByLabelText('State goal'), { target: { value: 'maintenance-margin' } });
     submit('Maintenance risk factor', '62.5');
-    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250'));
+    await waitFor(() => expect(createMarginMock).toHaveBeenCalledWith('http://studio', 'BTC', '6250', false));
   });
 
   it('creates an oracle price scenario, not a market move, from a percent of the mark', async () => {
@@ -501,7 +529,7 @@ describe('PhoenixStateDialog', () => {
     expect(screen.getByText('$85,957 → $81,659 (-5%), 81659 ticks')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
-    await waitFor(() => expect(createOracleMock).toHaveBeenCalledWith('http://studio', 'BTC', '81659'));
+    await waitFor(() => expect(createOracleMock).toHaveBeenCalledWith('http://studio', 'BTC', '81659', false));
     expect(createMarketMoveMock).not.toHaveBeenCalled();
   });
 });

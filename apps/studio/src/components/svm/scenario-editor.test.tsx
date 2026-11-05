@@ -1,6 +1,6 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
 
@@ -11,6 +11,16 @@ vi.mock('@surfpool/ui', async () => ({
   Combobox: (await import('@/test-utils')).MockCombobox,
   ComboboxLabel: ({ children }: any) => <span>{children}</span>,
   ComboboxOption: ({ children }: any) => <div>{children}</div>,
+  Dropdown: ({ children }: any) => <div>{children}</div>,
+  DropdownButton: ({ children, title, disabled }: any) => (
+    <button title={title} disabled={disabled}>
+      {children}
+    </button>
+  ),
+  DropdownMenu: ({ children }: any) => <div>{children}</div>,
+  DropdownItem: ({ children, onClick }: any) => <button onClick={onClick}>{children}</button>,
+  DropdownLabel: ({ children }: any) => <span>{children}</span>,
+  DropdownDescription: ({ children }: any) => <span>{children}</span>,
   Select: ({ children, ...props }: any) => <select {...props}>{children}</select>,
   Switch: ({ checked, onChange }: any) => <input type="checkbox" checked={checked} onChange={onChange} />,
 }));
@@ -39,6 +49,11 @@ const collateralTemplate = {
   },
 };
 
+const PAUSED_CLOCK_WARNING_TEXT =
+  'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
+const PAUSED_PLAY = 'Pause clock and step through slots';
+const RUNNING_PLAY = 'Run clock and play all slots';
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {
@@ -66,7 +81,7 @@ const renderEditor = (...actions: ReturnType<typeof stepAction>[]) =>
     <ScenarioEditor scenarioId="editor-test" initialSteps={[{ id: 'slot', name: 'Slot', type: 'slot', actions }]} />
   );
 
-async function openEditor(
+async function loadEditor(
   template: any = collateralTemplate,
   values: Record<string, unknown> = {},
   account: unknown = template.address
@@ -77,6 +92,14 @@ async function openEditor(
   }));
   renderEditor(stepAction(template, account, values));
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+}
+
+async function openEditor(
+  template: any = collateralTemplate,
+  values: Record<string, unknown> = {},
+  account: unknown = template.address
+) {
+  await loadEditor(template, values, account);
   fireEvent.click(await screen.findByTitle(`Phoenix Eternal: ${template.name}`));
   fireEvent.click(await screen.findByText(template.name));
 }
@@ -367,7 +390,7 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       }))}
     />
   );
-  fireEvent.click(await screen.findByTitle('Play scenario'));
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
   fireEvent.click(await screen.findByTitle('Step forward'));
 
   await waitFor(() => {
@@ -376,4 +399,285 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+const rpcCalls = () =>
+  fetchMock.mock.calls.filter(([url]) => url === 'http://rpc').map(([, init]) => JSON.parse(init.body));
+const rpcMethods = () => rpcCalls().map((call) => call.method);
+const registrations = () => rpcCalls().filter((call) => call.method === 'surfnet_registerScenario');
+
+const clockSensitiveTemplate = { ...collateralTemplate, tags: ['clock-sensitive'] };
+
+const column = (id: string) => ({
+  id,
+  name: 'Slot',
+  type: 'slot' as const,
+  actions: [
+    {
+      protocolId: 'phoenix-eternal',
+      actionId: collateralTemplate.id,
+      protocol: 'Phoenix Eternal',
+      action: collateralTemplate.name,
+      account: collateralTemplate.address,
+      overrides: { 'traderState.quoteLotCollateral': id },
+    },
+  ],
+});
+
+// A step marks its column as executing 100 ms later, which must not land after the test environment is gone
+const stepSettled = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 150)));
+
+const renderColumns = (template: any, ids: string[]) => {
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="columns" initialSteps={ids.map(column)} />);
+};
+
+it('plays with a paused clock: pauses it, registers the whole plan once, and lands one column per step', async () => {
+  renderColumns(clockSensitiveTemplate, ['1', '2']);
+
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual([
+      'surfnet_pauseClock',
+      'surfnet_registerScenario',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+  const [, plan] = rpcCalls();
+  expect(plan.params[0].name).toBe('Scenario');
+  expect(plan.params[0].overrides.map((override: any) => [override.scenarioRelativeSlot, override.values])).toEqual([
+    [0, { 'traderState.quoteLotCollateral': '1' }],
+    [1, { 'traderState.quoteLotCollateral': '2' }],
+  ]);
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcMethods().slice(4)).toEqual(['getEpochInfo', 'surfnet_timeTravel']));
+  expect(rpcCalls().at(-1).params).toEqual([{ absoluteSlot: 501 }]);
+  expect(registrations()).toHaveLength(1);
+  expect(await screen.findByTitle('Complete - back to read mode')).toBeInTheDocument();
+  await stepSettled();
+});
+
+it('resumes the clock and stays in read mode when the plan is rejected', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    const rejected = { error: { code: -32602, message: 'base slot 500 plus relative slot 1 overflows' } };
+    return {
+      ok: true,
+      json: async () =>
+        url.endsWith('/templates')
+          ? [clockSensitiveTemplate]
+          : method === 'surfnet_registerScenario'
+            ? rejected
+            : { result: { absoluteSlot: 500 } },
+    };
+  });
+  render(<ScenarioEditor scenarioId="rejected" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual(['surfnet_pauseClock', 'surfnet_registerScenario', 'surfnet_resumeClock'])
+  );
+  expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+});
+
+it('retries a step whose time travel failed', async () => {
+  let failNextTimeTravel = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failNextTimeTravel) {
+      failNextTimeTravel = false;
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [clockSensitiveTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="retry" initialSteps={[column('1'), column('2')]} />);
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  failNextTimeTravel = true;
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(6));
+  expect(await screen.findByTitle('Step forward')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(8));
+  expect(rpcMethods().slice(4)).toEqual(['getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
+  expect(registrations()).toHaveLength(1);
+  await stepSettled();
+});
+
+it('plays with the running clock: resumes the clock, registers the whole plan once and offers no step', async () => {
+  renderColumns(collateralTemplate, ['1', '2', '3']);
+
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  await waitFor(() => expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']));
+  expect(registrations()[0].params[0].overrides.map((override: any) => override.scenarioRelativeSlot)).toEqual([
+    0, 1, 2,
+  ]);
+  expect(await screen.findByTitle('Complete - back to read mode')).toBeInTheDocument();
+  expect(screen.queryByTitle('Step forward')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByTitle('Complete - back to read mode'));
+  expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
+  expect(rpcMethods()).toEqual(['surfnet_resumeClock', 'surfnet_registerScenario']);
+});
+
+it('does not register a running Play when the clock cannot be resumed', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => ({
+    ok: !(url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'surfnet_resumeClock'),
+    json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+  }));
+  render(<ScenarioEditor scenarioId="resume-fails" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText(RUNNING_PLAY));
+  expect(await screen.findByTitle('Play scenario')).toBeInTheDocument();
+  expect(rpcMethods()).toEqual(['surfnet_resumeClock']);
+});
+
+it('resumes the clock when a paused playback is stopped', async () => {
+  renderColumns(clockSensitiveTemplate, ['1', '2']);
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  fireEvent.click(await screen.findByTitle('Stop scenario'));
+  await waitFor(() => expect(rpcMethods().at(-1)).toBe('surfnet_resumeClock'));
+});
+
+it('resumes the clock when a paused Play cannot move it to the next slot, and registers the plan again on the next Play', async () => {
+  let failTimeTravel = true;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && failTimeTravel) {
+      return { ok: true, json: async () => ({ error: { code: -32603, message: 'Failed to confirm clock update' } }) };
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="advance-fails" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual([
+      'surfnet_pauseClock',
+      'surfnet_registerScenario',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+      'surfnet_resumeClock',
+    ])
+  );
+  expect(screen.getByTitle('Play scenario')).toBeInTheDocument();
+
+  failTimeTravel = false;
+  fireEvent.click(screen.getByText(PAUSED_PLAY));
+  await waitFor(() =>
+    expect(rpcMethods().slice(5)).toEqual([
+      'surfnet_pauseClock',
+      'surfnet_registerScenario',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+});
+
+it('ignores a second Play while the first one is still registering', async () => {
+  let finishRegistering!: () => void;
+  const registering = new Promise<void>((resolve) => {
+    finishRegistering = () => resolve();
+  });
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === 'http://rpc' && JSON.parse(`${init?.body}`).method === 'surfnet_registerScenario') {
+      await registering;
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(<ScenarioEditor scenarioId="double-play" initialSteps={[column('1')]} />);
+
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  expect(await screen.findByTitle('Preparing scenario…')).toBeDisabled();
+  fireEvent.click(screen.getByText(RUNNING_PLAY));
+  finishRegistering();
+
+  await waitFor(() =>
+    expect(rpcMethods()).toEqual([
+      'surfnet_pauseClock',
+      'surfnet_registerScenario',
+      'getEpochInfo',
+      'surfnet_timeTravel',
+    ])
+  );
+});
+
+it('offers both clocks without a warning when no used template is clock-sensitive', async () => {
+  await loadEditor();
+  expect(await screen.findByText(PAUSED_PLAY)).toBeInTheDocument();
+  expect(screen.getByText(RUNNING_PLAY)).toBeInTheDocument();
+  expect(screen.queryByText(/Time-sensitive scenario/)).not.toBeInTheDocument();
+});
+
+it('offers both clocks and warns on the paused one when a used template is clock-sensitive', async () => {
+  await loadEditor(clockSensitiveTemplate);
+  expect(await screen.findByText(PAUSED_PLAY)).toBeInTheDocument();
+  expect(screen.getByText(RUNNING_PLAY)).toBeInTheDocument();
+  expect(screen.getByText(PAUSED_CLOCK_WARNING_TEXT)).toBeInTheDocument();
+});
+
+it('ignores a second Step and keeps Stop disabled while the first one is still moving the clock', async () => {
+  let finishTimeTravel!: () => void;
+  let holdTimeTravel = false;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const method = url === 'http://rpc' ? JSON.parse(`${init?.body}`).method : undefined;
+    if (method === 'surfnet_timeTravel' && holdTimeTravel) {
+      await new Promise<void>((resolve) => {
+        finishTimeTravel = resolve;
+      });
+    }
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/templates') ? [collateralTemplate] : { result: { absoluteSlot: 500 } }),
+    };
+  });
+  render(
+    <ScenarioEditor
+      scenarioId="double-step"
+      initialSteps={[1, 2, 3].map((height) => ({
+        id: `${height}`,
+        name: 'Slot',
+        type: 'slot',
+        actions: [stepAction(collateralTemplate)],
+      }))}
+    />
+  );
+  fireEvent.click(await screen.findByText(PAUSED_PLAY));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(4));
+
+  const step = await screen.findByTitle('Step forward');
+  holdTimeTravel = true;
+  // Both clicks land before React renders again, so only a guard outside state can stop the second
+  act(() => {
+    step.click();
+    step.click();
+  });
+  expect(screen.getByTitle('Stop scenario')).toBeDisabled();
+  await waitFor(() => expect(rpcCalls()).toHaveLength(6));
+  holdTimeTravel = false;
+  finishTimeTravel();
+  await waitFor(() => expect(screen.getByTitle('Stop scenario')).toBeEnabled());
+  expect(rpcCalls()).toHaveLength(6);
+
+  fireEvent.click(await screen.findByTitle('Step forward'));
+  await waitFor(() => expect(rpcCalls()).toHaveLength(8));
+  expect(rpcMethods().slice(4)).toEqual(['getEpochInfo', 'surfnet_timeTravel', 'getEpochInfo', 'surfnet_timeTravel']);
+  expect(registrations()).toHaveLength(1);
+  await stepSettled();
 });

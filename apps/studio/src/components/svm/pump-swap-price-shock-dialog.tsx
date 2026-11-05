@@ -3,6 +3,7 @@
 import { createPumpSwapPriceShockScenario } from '@/lib/scenarios-api';
 import { Button, Dialog, DialogActions, DialogDescription, DialogTitle, Input } from '@surfpool/ui';
 import { type ChangeEvent, type FormEvent, useState } from 'react';
+import FetchBeforeUseSwitch from './fetch-before-use-switch';
 
 interface PumpSwapPriceShockDialogProps {
   open: boolean;
@@ -20,6 +21,7 @@ export default function PumpSwapPriceShockDialog({
   // STATE
   const [tokenMint, setTokenMint] = useState('');
   const [virtualQuoteReserves, setVirtualQuoteReserves] = useState('');
+  const [fetchBeforeUse, setFetchBeforeUse] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -53,7 +55,7 @@ export default function PumpSwapPriceShockDialog({
     setError(null);
 
     try {
-      const result = await createPumpSwapPriceShockScenario(studioUrl, tokenMint, normalizedReserves);
+      const result = await createPumpSwapPriceShockScenario(studioUrl, tokenMint, normalizedReserves, fetchBeforeUse);
       setTokenMint('');
       setVirtualQuoteReserves('');
       onCreated(result.id);
@@ -101,6 +103,7 @@ export default function PumpSwapPriceShockDialog({
               Raw WSOL units written to the pool&apos;s virtual quote reserves.
             </p>
           </div>
+          <FetchBeforeUseSwitch checked={fetchBeforeUse} onChange={setFetchBeforeUse} disabled={isCreating} />
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogActions>
