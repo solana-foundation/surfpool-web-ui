@@ -96,4 +96,10 @@ export const exampleScenarios: ExampleScenario[] = [
     icon: '📉',
     protocols: ['phoenix-eternal'],
   },
+  {
+    label: 'Chainlink Price Crash',
+    prompt: "Crash SOL to $60 on Chainlink's SOL / USD data feed",
+    icon: '🔗',
+    protocols: ['chainlink'],
+  },
 ];

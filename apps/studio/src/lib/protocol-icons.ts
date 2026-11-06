@@ -7,6 +7,7 @@ export interface Protocol {
 
 export const PROTOCOLS: Protocol[] = [
   { id: 'pyth', name: 'Pyth', icon: '/assets/pyth.svg' },
+  { id: 'chainlink', name: 'Chainlink', icon: '/assets/chainlink.svg' },
   { id: 'switchboard', name: 'Switchboard', icon: '/assets/switchboard.svg' },
   { id: 'jupiter', name: 'Jupiter', icon: '/assets/jupiter.svg' },
   { id: 'raydium', name: 'Raydium', icon: '/assets/raydium.svg' },

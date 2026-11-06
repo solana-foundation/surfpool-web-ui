@@ -116,6 +116,7 @@ interface ScenarioEditorProps {
 // Must match the `protocol` field of each template exactly, including case.
 const ENABLED_PROTOCOLS = [
   'Pyth',
+  'Chainlink',
   'Raydium',
   'Drift',
   'Pump',
