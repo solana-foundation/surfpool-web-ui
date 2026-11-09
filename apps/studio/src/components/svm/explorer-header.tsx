@@ -2,7 +2,7 @@ import TransactionInspector from '@/components/svm/transaction-inspector';
 import { useAppConfig } from '@/hooks/use-app-config';
 import { S3Credentials, uploadToS3 } from '@/lib/s3-upload';
 import { solanaWebSocketService } from '@/lib/solana-websocket-service';
-import { fetchSurfnetClockSeconds, startSurfnetClockPolling } from '@/lib/surfnet-clock';
+import { fetchSurfnetClockSeconds, setSurfnetClockPaused, startSurfnetClockPolling } from '@/lib/surfnet-clock';
 import { CalendarIcon, PauseIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { ArchiveBoxArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/solid';
 import { CheckoutModal, MoneyMQProvider } from '@moneymq/react';
@@ -315,37 +315,11 @@ const ExplorerHeader = ({ initialTransactionSignature }: ExplorerHeaderProps) =>
 
   // Toggle clock pause/resume
   const toggleClock = async () => {
-    try {
-      const method = isClockPaused ? 'surfnet_resumeClock' : 'surfnet_pauseClock';
-
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: method,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.result !== undefined) {
-          const newPauseState = !isClockPaused;
-          setIsClockPaused(newPauseState);
-
-          // Dispatch global event so other components can sync
-          window.dispatchEvent(
-            new CustomEvent('clockPauseStateChanged', {
-              detail: { isPaused: newPauseState },
-            })
-          );
-        }
-      }
-    } catch (error) {
-      console.error('Error toggling clock:', error);
+    const newPauseState = !isClockPaused;
+    if (await setSurfnetClockPaused(rpcUrl, newPauseState)) {
+      setIsClockPaused(newPauseState);
+    } else {
+      console.error('Error toggling clock');
     }
   };
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSurfnetClockSeconds, startSurfnetClockPolling } from './surfnet-clock';
+import { fetchSurfnetClockSeconds, setSurfnetClockPaused, startSurfnetClockPolling } from './surfnet-clock';
 
 const mockFetchResponse = (response: Partial<Response> & { json?: () => Promise<unknown> }) => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, ...response });
@@ -101,5 +101,34 @@ describe('fetchSurfnetClockSeconds', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     stop();
+  });
+});
+
+describe('setSurfnetClockPaused', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pauses or resumes the clock and tells the other widgets', async () => {
+    const fetchMock = mockFetchResponse({ json: async () => ({ result: null }) });
+    const listener = vi.fn();
+    window.addEventListener('clockPauseStateChanged', listener);
+
+    await expect(setSurfnetClockPaused('http://127.0.0.1:8899', true)).resolves.toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).method).toBe('surfnet_pauseClock');
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ isPaused: true });
+
+    await expect(setSurfnetClockPaused('http://127.0.0.1:8899', false)).resolves.toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).method).toBe('surfnet_resumeClock');
+    window.removeEventListener('clockPauseStateChanged', listener);
+  });
+
+  it('reports failure without telling anyone when the surfnet rejects the call', async () => {
+    mockFetchResponse({ json: async () => ({ error: { code: -32603, message: 'nope' } }) });
+    const listener = vi.fn();
+    window.addEventListener('clockPauseStateChanged', listener);
+    await expect(setSurfnetClockPaused('http://127.0.0.1:8899', true)).resolves.toBe(false);
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener('clockPauseStateChanged', listener);
   });
 });
