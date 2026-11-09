@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createdScenarioIdFromToolResult,
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
@@ -576,6 +577,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured SolFi account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['solfi']));
+
+    expect(result).toContain('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic');
+    expect(result).toContain('USDC vault');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -584,6 +592,32 @@ describe('buildAiPrompt', () => {
   it('ignores unknown protocol IDs', () => {
     const result = buildAiPrompt('test', new Set(['nonexistent']));
     expect(result).toBe('test');
+  });
+});
+
+describe('createdScenarioIdFromToolResult', () => {
+  it('extracts the id from the create_scenario MCP text response', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: null,
+              url: 'http://127.0.0.1:18488/scenarios?id=solfi-five-usdc&tab=editor',
+            }),
+          },
+        ],
+      })
+    ).toBe('solfi-five-usdc');
+  });
+
+  it('does not treat an MCP error response as a created scenario', () => {
+    expect(
+      createdScenarioIdFromToolResult({
+        content: [{ type: 'text', text: JSON.stringify({ error: 'creation failed', url: null }) }],
+      })
+    ).toBeNull();
   });
 });
 
@@ -766,8 +800,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -792,8 +825,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

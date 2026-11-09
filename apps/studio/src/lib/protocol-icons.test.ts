@@ -8,6 +8,7 @@ describe('PROTOCOLS', () => {
     expect(ids).toContain('pyth');
     expect(ids).toContain('jupiter');
     expect(ids).toContain('raydium');
+    expect(ids).toContain('solfi');
   });
 
   it('each protocol has id, name, and icon', () => {
@@ -23,6 +24,7 @@ describe('PROTOCOL_ICONS', () => {
   it('maps protocol IDs to icon paths', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
+    expect(PROTOCOL_ICONS['solfi']).toBe('/assets/solfi-badged.png');
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
   });
 
@@ -34,6 +36,7 @@ describe('PROTOCOL_ICONS', () => {
 describe('getProtocolIcon', () => {
   it('returns icon for known protocol', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
+    expect(getProtocolIcon('solfi')).toBe('/assets/solfi-badged.png');
     expect(getProtocolIcon('phoenix-eternal')).toBe('/assets/phoenix.svg');
   });
 
