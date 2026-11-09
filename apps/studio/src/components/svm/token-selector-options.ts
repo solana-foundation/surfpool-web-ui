@@ -32,6 +32,8 @@ export const findOptionByTypedValue = (options: TokenSelectorOption[], typedValu
     );
   });
 };
+export const shouldUseConstantCombobox = (optionCount: number, isAccountSelector: boolean) =>
+  isAccountSelector || optionCount > 20;
 
 export const resolveTokenSelectorOptions = (
   catalogOptions: TokenSelectorOption[],
@@ -50,3 +52,16 @@ export const resolveTokenSelectorOptions = (
     selectedOption: catalogOption || customOption,
   };
 };
+
+const PUBKEY_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+export const isAccountAddress = (text: string) => PUBKEY_PATTERN.test(text);
+
+// A typed account address an account picker does not list yet, offered as its last option.
+export const typedAccountOption = (
+  query: string,
+  options: ReadonlyArray<{ value?: string | number }>
+): TokenSelectorOption | null =>
+  isAccountAddress(query) && !options.some((option) => option.value === query)
+    ? { id: `custom-${query}`, label: 'Custom address', value: query, metadata: { symbol: `Custom · ${query}` } }
+    : null;

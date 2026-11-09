@@ -56,6 +56,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'Cross-Pair Arbitrage',
+    prompt:
+      "Keep BisonFi's SOL/USDC pool at its current price and set its SOL/USDT pool 1.5% higher, while USDT still trades at $1 on Orca Whirlpool, so buying SOL for USDC on BisonFi, selling it for USDT on BisonFi and swapping the USDT back to USDC on Whirlpool is profitable",
+    icon: '🐃',
+    protocols: ['bisonfi', 'whirlpool'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
