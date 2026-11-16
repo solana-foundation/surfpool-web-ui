@@ -29,6 +29,7 @@ import AIHeader from './ai-header';
 import DraftField from './draft-field';
 import GenericBento from './generic-bento';
 import PhoenixStateDialog from './phoenix-state-dialog';
+import PmmFairValueDialog from './pmm-fair-value-dialog';
 import PumpGraduationDialog from './pump-graduation-dialog';
 import PumpSwapPriceShockDialog from './pump-swap-price-shock-dialog';
 import ScenarioCard from './scenario-card';
@@ -63,6 +64,7 @@ export default function ScenariosBento({
   const [pumpGraduationDialogOpen, setPumpGraduationDialogOpen] = useState(false);
   const [pumpSwapPriceShockDialogOpen, setPumpSwapPriceShockDialogOpen] = useState(false);
   const [phoenixStateDialogOpen, setPhoenixStateDialogOpen] = useState(false);
+  const [pmmFairValueDialogOpen, setPmmFairValueDialogOpen] = useState(false);
 
   // Sync scenarios when initialScenarios changes
   useEffect(() => {
@@ -203,6 +205,20 @@ export default function ScenariosBento({
 
   const handlePhoenixStateCreated = (scenarioId: string) => {
     setPhoenixStateDialogOpen(false);
+    onRefresh?.();
+    router.push(`/scenarios?id=${scenarioId}&tab=editor`);
+  };
+
+  const handleOpenPmmFairValueDialog = () => {
+    setPmmFairValueDialogOpen(true);
+  };
+
+  const handleClosePmmFairValueDialog = () => {
+    setPmmFairValueDialogOpen(false);
+  };
+
+  const handlePmmFairValueCreated = (scenarioId: string) => {
+    setPmmFairValueDialogOpen(false);
     onRefresh?.();
     router.push(`/scenarios?id=${scenarioId}&tab=editor`);
   };
@@ -350,6 +366,7 @@ export default function ScenariosBento({
             onPumpGraduationSelect={handleOpenPumpGraduationDialog}
             onPumpSwapPriceShockSelect={handleOpenPumpSwapPriceShockDialog}
             onPhoenixStateSelect={handleOpenPhoenixStateDialog}
+            onPmmFairValueSelect={handleOpenPmmFairValueDialog}
           />
         </>
       )}
@@ -460,6 +477,13 @@ export default function ScenariosBento({
         rpcUrl={rpcUrl}
         onClose={handleClosePhoenixStateDialog}
         onCreated={handlePhoenixStateCreated}
+      />
+      <PmmFairValueDialog
+        open={pmmFairValueDialogOpen}
+        studioUrl={studioUrl}
+        rpcUrl={rpcUrl}
+        onClose={handleClosePmmFairValueDialog}
+        onCreated={handlePmmFairValueCreated}
       />
     </div>
   );
