@@ -56,6 +56,13 @@ export const exampleScenarios: ExampleScenario[] = [
     protocols: ['kamino', 'whirlpool'],
   },
   {
+    label: 'HumidiFi Price Shock',
+    prompt:
+      "Create an editable scenario on the HumidiFi SOL/USDC market where HumidiFi's price for SOL drops to $100, so swaps fill at that price. Prepare state only; do not build or execute a swap.",
+    icon: '💧',
+    protocols: ['humidifi'],
+  },
+  {
     label: 'Triangular Arbitrage',
     prompt:
       'Create a triangular arbitrage opportunity across BTC/USD, ETH/USD, and ETH/BTC price feeds that yields a profitable trading cycle',
