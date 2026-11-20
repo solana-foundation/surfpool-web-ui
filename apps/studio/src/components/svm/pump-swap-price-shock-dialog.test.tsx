@@ -14,6 +14,11 @@ vi.mock('@surfpool/ui', () => ({
   DialogDescription: ({ children }: any) => <p>{children}</p>,
   DialogTitle: ({ children }: any) => <h2>{children}</h2>,
   Input: (props: any) => <input {...props} />,
+  Switch: ({ onChange, color, ...props }: any) => {
+    const handleChange = (event: any) => onChange(event.target.checked);
+
+    return <input type="checkbox" role="switch" {...props} onChange={handleChange} />;
+  },
 }));
 
 const createScenarioMock = vi.mocked(createPumpSwapPriceShockScenario);
@@ -38,9 +43,24 @@ describe('PumpSwapPriceShockDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => {
-      expect(createScenarioMock).toHaveBeenCalledWith('http://studio', ' MigratedMintpump ', '15000000000000');
+      expect(createScenarioMock).toHaveBeenCalledWith('http://studio', ' MigratedMintpump ', '15000000000000', true);
       expect(onCreated).toHaveBeenCalledWith('scenario-id');
     });
+  });
+
+  it('creates the scenario on the local pool when fetch before use is off', async () => {
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    render(<PumpSwapPriceShockDialog open studioUrl="http://studio" onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    expect(screen.getByRole('switch', { name: 'Fetch before use' })).toBeChecked();
+    fireEvent.change(screen.getByLabelText('Token mint'), { target: { value: 'MigratedMintpump' } });
+    fireEvent.change(screen.getByLabelText('Virtual quote reserves'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Fetch before use' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() =>
+      expect(createScenarioMock).toHaveBeenCalledWith('http://studio', 'MigratedMintpump', '1', false)
+    );
   });
 
   it('rejects a zero reserve amount before calling the backend', () => {

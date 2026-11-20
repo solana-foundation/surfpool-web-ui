@@ -27,6 +27,7 @@ import {
   ListboxOption,
 } from '@surfpool/ui';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import FetchBeforeUseSwitch from './fetch-before-use-switch';
 import { findOptionByTypedValue } from './token-selector-options';
 
 const PhoenixStateMode = {
@@ -228,6 +229,7 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
   const [depth, setDepth] = useState<LiquidationDepth>(LiquidationDepth.OneLiquidation);
   const [movePercent, setMovePercent] = useState('2');
   const [unit, setUnit] = useState<PhoenixUnit>('percent');
+  const [fetchBeforeUse, setFetchBeforeUse] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [marketOptions, setMarketOptions] = useState<DynamicRefOption[]>([]);
@@ -317,7 +319,7 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
     if (unhealthy.length) {
       throw new Error(`${unhealthy.map((plan) => plan.trader).join(', ')} would not stay healthy until the move.`);
     }
-    return createPhoenixCollateralLiquidationScenario(studioUrl, prepared, moves);
+    return createPhoenixCollateralLiquidationScenario(studioUrl, prepared, moves, fetchBeforeUse);
   };
 
   // HANDLERS
@@ -385,12 +387,12 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
     try {
       const result =
         mode === PhoenixStateMode.MarketMove
-          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount)
+          ? await createPhoenixMarketMoveScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
           : mode === PhoenixStateMode.OraclePrice
-            ? await createPhoenixOraclePriceScenario(studioUrl, marketSymbol, rawAmount)
+            ? await createPhoenixOraclePriceScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse)
             : isCollateralLiquidation
               ? await createCollateralLiquidationScenario()
-              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount);
+              : await createPhoenixMaintenanceMarginScenario(studioUrl, marketSymbol, rawAmount, fetchBeforeUse);
       onCreated(result.id);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create Phoenix state scenario');
@@ -538,6 +540,7 @@ export default function PhoenixStateDialog({ open, studioUrl, rpcUrl, onClose, o
             </div>
           )}
           {amountField}
+          <FetchBeforeUseSwitch checked={fetchBeforeUse} onChange={setFetchBeforeUse} disabled={isCreating} />
           {!!error && <p className="text-sm text-red-400">{error}</p>}
         </div>
         <DialogActions>

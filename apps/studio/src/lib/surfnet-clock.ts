@@ -24,6 +24,31 @@ export async function fetchSurfnetClockSeconds(rpcUrl: string): Promise<number |
   }
 }
 
+export async function setSurfnetClockPaused(rpcUrl: string, paused: boolean): Promise<boolean> {
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: paused ? 'surfnet_pauseClock' : 'surfnet_resumeClock',
+      }),
+    });
+    if (!response.ok) return false;
+
+    const data = await response.json();
+    if (data?.result === undefined) return false;
+
+    window.dispatchEvent(new CustomEvent('clockPauseStateChanged', { detail: { isPaused: paused } }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function startSurfnetClockPolling(
   rpcUrl: string,
   onUpdate: (seconds: number | null) => void,
