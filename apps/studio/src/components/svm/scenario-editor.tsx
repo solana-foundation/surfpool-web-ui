@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppConfig } from '@/hooks/use-app-config';
+import { featuredAccountInputs, getFeaturedAccounts, resolveFeaturedAccount } from '@/lib/featured-accounts';
 import { getProtocolIcon } from '@/lib/protocol-icons';
 import {
   fetchDynamicRefOptions,
@@ -42,7 +43,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LosslessNumber } from 'lossless-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { getFieldsFromRawLayout } from './raw-layout-fields';
-import { customValueOption, findOptionByTypedValue, resolveTokenSelectorOptions } from './token-selector-options';
+import {
+  customValueOption,
+  findOptionByTypedValue,
+  resolveTokenSelectorOptions,
+  shouldUseConstantCombobox,
+  typedAccountOption,
+} from './token-selector-options';
 import TransactionInspector from './transaction-inspector';
 
 interface Protocol {
@@ -120,6 +127,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'BisonFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',
   'kamino-scope',
@@ -167,6 +175,7 @@ export default function ScenarioEditor({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [accountData, setAccountData] = useState<Record<string, any>>({});
+  const [selectedAccountPubkey, setSelectedAccountPubkey] = useState('');
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
   // Which entry of an array field the user is editing, keyed by the array's path. Templates declare
   // one example index (Scope declares `prices.0.*`), but the entry you actually want differs per
@@ -180,6 +189,8 @@ export default function ScenarioEditor({
   const [mouseX, setMouseX] = useState<number | null>(null);
   const [hasAnimated, setHasAnimated] = useState<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const featuredAccounts = getFeaturedAccounts(selectedAction?.template?.id);
+  const isAddressSelectionMissing = Boolean(featuredAccounts && selectedAccountPubkey.trim() === '');
   const [currentPlaybackSlot, setCurrentPlaybackSlot] = useState<number>(0);
   const [playClock, setPlayClock] = useState<PlayClock>('running');
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
@@ -646,6 +657,7 @@ export default function ScenarioEditor({
     const requestId = ++accountRequestRef.current;
     setSelectedAction(action);
     setAccountData({});
+    setSelectedAccountPubkey(getFeaturedAccounts(action.template?.id) ? (accountPubkey ?? '') : '');
     setModifiedFields(new Set()); // Clear modified fields when loading new action
     setArrayEntryIndex({});
     setFetchBeforeUse(false); // Reset fetch before use toggle
@@ -722,6 +734,36 @@ export default function ScenarioEditor({
       console.error('Error loading account data:', error);
       if (requestId === accountRequestRef.current) setLoadingAccountData(false);
     }
+  };
+
+  // Picks the account a featured-account template writes, and fills the inputs the template declares
+  // from the picked account, such as the oracle that keeps a market alive.
+  const changeFeaturedAccount = (pubkey: string) => {
+    setSelectedAccountPubkey(pubkey);
+    const template = selectedAction?.template;
+    const declaresInput = (path: string) =>
+      (template?.properties ?? []).some(
+        (prop: any) => typeof prop !== 'string' && prop.type === 'input' && prop.path === path
+      );
+    const fills = Object.entries(featuredAccountInputs(template?.id, pubkey)).filter(([path]) => declaresInput(path));
+    if (fills.length === 0) return;
+
+    setAccountData((previous) => {
+      const next = { ...previous };
+      for (const [path, value] of fills) {
+        if (value === undefined) delete next[path];
+        else next[path] = value;
+      }
+      return next;
+    });
+    setModifiedFields((previous) => {
+      const next = new Set(previous);
+      for (const [path, value] of fills) {
+        if (value === undefined) next.delete(path);
+        else next.add(path);
+      }
+      return next;
+    });
   };
 
   // Filter actions in protocol panel, narrowed to the chosen product when there is one
@@ -803,7 +845,7 @@ export default function ScenarioEditor({
                 overrides: accountData,
                 modifiedFields: Array.from(modifiedFields),
                 fetchBeforeUse: fetchBeforeUse,
-                account: action.template?.address,
+                account: resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
               },
             ],
           };
@@ -845,13 +887,15 @@ export default function ScenarioEditor({
                     fetchBeforeUse: fetchBeforeUse,
                     // A template with no address keeps the account the override was saved for, such as a trader
                     // given to a preset. Any other address, a PDA included, comes from the template, so edited seed
-                    // fields such as a token or fee tier pick the new account.
+                    // fields such as a token or fee tier pick the new account. A featured-account template
+                    // saves the account picked in the editor.
                     account:
+                      !getFeaturedAccounts(action.template?.id) &&
                       leavesAccountToOverride(action.template?.address) &&
                       existingAction.actionId === action.id &&
                       existingAction.account?.pubkey
                         ? existingAction.account
-                        : action.template?.address,
+                        : resolveFeaturedAccount(action.template?.id, action.template?.address, selectedAccountPubkey),
                   }
                 : existingAction
             ),
@@ -2410,6 +2454,13 @@ export default function ScenarioEditor({
                                                   // Parse based on type
                                                   if (inputType === 'number') {
                                                     newValue = toScenarioNumber(e.target.value);
+                                                    // The backend reads a 128-bit value past u64 only from a decimal string.
+                                                    if (
+                                                      newValue instanceof LosslessNumber &&
+                                                      (typeString === 'u128' || typeString === 'i128')
+                                                    ) {
+                                                      newValue = newValue.toString();
+                                                    }
                                                   } else if (
                                                     typeString.includes('array') ||
                                                     typeString.includes('vec') ||
@@ -2446,7 +2497,7 @@ export default function ScenarioEditor({
                                       const renderConstantRefFields = () => {
                                         // Filter for constant_ref properties from the new unified format
                                         // Note: Backend serializes PropertyKind as "type" field
-                                        const constantRefProps = rawProperties
+                                        const propertyConstantRefs = rawProperties
                                           .filter((prop: any) => {
                                             if (typeof prop === 'string') return false;
                                             if (prop.type === 'constant_ref')
@@ -2477,6 +2528,12 @@ export default function ScenarioEditor({
                                             label: prop.label,
                                             description: prop.description,
                                           }));
+                                        const constantRefProps = [
+                                          ...(featuredAccounts
+                                            ? [{ name: '__account__', type: 'constant_ref', isAccountSelector: true }]
+                                            : []),
+                                          ...propertyConstantRefs,
+                                        ];
 
                                         if (constantRefProps.length === 0) return null;
 
@@ -2487,12 +2544,16 @@ export default function ScenarioEditor({
                                           currentValue,
                                           isModified,
                                           takesCustomValues,
+                                          onValueChange,
+                                          acceptsTypedAddress,
                                         }: {
                                           constantDef: any;
                                           fieldPath: string;
                                           currentValue: string | number | undefined;
                                           isModified: boolean;
                                           takesCustomValues: boolean;
+                                          onValueChange: (value: string) => void;
+                                          acceptsTypedAddress: boolean;
                                         }) => {
                                           const { options, selectedOption } = resolveTokenSelectorOptions(
                                             constantDef.options,
@@ -2508,14 +2569,15 @@ export default function ScenarioEditor({
                                               value={selectedOption}
                                               onChange={(option: any) => {
                                                 if (option) {
-                                                  setValue(fieldPath, option.value);
+                                                  onValueChange(String(option.value));
                                                 }
                                               }}
                                               options={options}
                                               displayValue={(option: any) => {
                                                 if (!option) return '';
                                                 // Display symbol from metadata if available
-                                                const symbol = option.metadata?.symbol || option.id?.toUpperCase();
+                                                const symbol =
+                                                  option.metadata?.symbol || option.label || option.id?.toUpperCase();
                                                 return symbol;
                                               }}
                                               filter={(option: any, query: string) => {
@@ -2535,7 +2597,13 @@ export default function ScenarioEditor({
                                                   value.includes(q)
                                                 );
                                               }}
-                                              customOption={takesCustomValues ? customOptionFor : undefined}
+                                              customOption={
+                                                acceptsTypedAddress
+                                                  ? (query: string) => typedAccountOption(query, options)
+                                                  : takesCustomValues
+                                                    ? customOptionFor
+                                                    : undefined
+                                              }
                                               immediate={takesCustomValues}
                                               placeholder={`Search ${constantDef.label.toLowerCase()}...`}
                                               aria-label={constantDef.label}
@@ -2558,7 +2626,9 @@ export default function ScenarioEditor({
                                                     )}
                                                     <ComboboxLabel>
                                                       <span className="font-medium">
-                                                        {option.metadata?.symbol || option.id?.toUpperCase()}
+                                                        {option.metadata?.symbol ||
+                                                          option.label ||
+                                                          option.id?.toUpperCase()}
                                                       </span>
                                                       {option.description && (
                                                         <span className="ml-2 text-zinc-400">{option.description}</span>
@@ -2574,20 +2644,34 @@ export default function ScenarioEditor({
                                         return (
                                           <div className="mb-6 space-y-4 rounded-lg border border-zinc-600/50 bg-zinc-800/20 p-4">
                                             <h5 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-                                              PDA Configuration
+                                              {featuredAccounts ? 'Account selection' : 'PDA Configuration'}
                                             </h5>
                                             {constantRefProps.map((prop: any) => {
-                                              const constantDef = prop.constantDef;
+                                              const constantDef = prop.isAccountSelector
+                                                ? featuredAccounts
+                                                : prop.constantDef;
                                               const fieldPath = prop.name;
-                                              const rawValue = getValue(fieldPath);
+                                              const rawValue = prop.isAccountSelector
+                                                ? selectedAccountPubkey
+                                                : getValue(fieldPath);
                                               // Convert to string for comparison (handles numbers like config_index)
                                               const currentValue = rawValue != null ? String(rawValue) : '';
-                                              const isModified = modifiedFields.has(fieldPath);
+                                              const isModified = prop.isAccountSelector
+                                                ? currentValue !== ''
+                                                : modifiedFields.has(fieldPath);
+                                              const onValueChange = prop.isAccountSelector
+                                                ? changeFeaturedAccount
+                                                : (value: string) => setValue(fieldPath, value);
 
                                               // A live list is always searchable and takes custom values;
                                               // static catalogs keep the plain select below 20 options.
                                               const isLiveList = prop.type === 'dynamic_ref';
-                                              const useCombobox = isLiveList || constantDef.options.length > 20;
+                                              const useCombobox =
+                                                isLiveList ||
+                                                shouldUseConstantCombobox(
+                                                  constantDef.options.length,
+                                                  Boolean(prop.isAccountSelector)
+                                                );
                                               // A saved value the catalog lacks stays selectable as its custom option.
                                               const staticCatalog = resolveTokenSelectorOptions(
                                                 constantDef.options,
@@ -2617,12 +2701,14 @@ export default function ScenarioEditor({
                                                       currentValue={currentValue}
                                                       isModified={isModified}
                                                       takesCustomValues={isLiveList}
+                                                      onValueChange={onValueChange}
+                                                      acceptsTypedAddress={Boolean(prop.isAccountSelector)}
                                                     />
                                                   ) : (
                                                     <Select
                                                       value={String(staticCatalog.selectedOption?.value ?? '')}
                                                       onChange={(e) => {
-                                                        setValue(fieldPath, e.target.value);
+                                                        onValueChange(e.target.value);
                                                       }}
                                                       className={
                                                         isModified ? '!border-yellow-500 !bg-yellow-500/5' : ''
@@ -2700,7 +2786,12 @@ export default function ScenarioEditor({
 
                                 {/* Add/Update Action Button - Right Aligned */}
                                 {!loadingAccountData && (
-                                  <div className="flex justify-end">
+                                  <div className="flex flex-col items-end gap-2">
+                                    {isAddressSelectionMissing && (
+                                      <p className="text-right text-sm text-amber-400">
+                                        Select a target account above before adding this override.
+                                      </p>
+                                    )}
                                     <button
                                       onClick={() => {
                                         if (selectedSlotId && selectedProtocol && selectedAction) {
@@ -2721,12 +2812,13 @@ export default function ScenarioEditor({
                                           setSelectedProduct(null);
                                           setSelectedAction(null);
                                           setAccountData({});
+                                          setSelectedAccountPubkey('');
                                           setModifiedFields(new Set());
                                           setArrayEntryIndex({});
                                           setFetchBeforeUse(false);
                                         }
                                       }}
-                                      disabled={!selectedSlotId || !selectedAction}
+                                      disabled={!selectedSlotId || !selectedAction || isAddressSelectionMissing}
                                       className="w-[300px] rounded-lg bg-yellow-500 px-6 py-3 font-semibold text-zinc-900 transition-all hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {editingAction
