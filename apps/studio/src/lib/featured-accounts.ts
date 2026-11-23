@@ -1,5 +1,6 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
 import { BISONFI_FEATURED } from './pmms/bisonfi';
+import { SOLFI_FEATURED } from './pmms/solfi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
   /** Inputs filled when this account is picked, keyed by property path, such as the oracle that keeps it alive. */
@@ -20,7 +21,7 @@ export type FeaturedProtocol = {
 };
 
 // Each protocol keeps its accounts and AI context in its own file and is registered here.
-const FEATURED_PROTOCOLS: readonly FeaturedProtocol[] = [BISONFI_FEATURED];
+const FEATURED_PROTOCOLS: readonly FeaturedProtocol[] = [SOLFI_FEATURED, BISONFI_FEATURED];
 
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>(
   FEATURED_PROTOCOLS.flatMap(({ templates }) => Object.entries(templates))

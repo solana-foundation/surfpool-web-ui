@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
   buildUpdatePayload,
+  createdScenarioIdFromToolResult,
   createPhoenixCollateralLiquidationScenario,
   createPhoenixMaintenanceMarginScenario,
   createPhoenixMarketMoveScenario,
@@ -11,7 +12,6 @@ import {
   createPumpGraduationScenario,
   createPumpSwapPriceShockScenario,
   createScenarioPayload,
-  createdScenarioIdFromToolResult,
   fetchDynamicRefOptions,
   fetchPhoenixTraderPositions,
   flattenOverrideValues,
@@ -577,6 +577,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured SolFi account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['solfi']));
+
+    expect(result).toContain('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic');
+    expect(result).toContain('USDC vault');
+  });
+
   it('adds the featured BisonFi market addresses', () => {
     const result = buildAiPrompt('set SOL/USDC depth to 3 SOL and 5 USDC', new Set(['bisonfi']));
 
@@ -800,8 +807,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -826,8 +832,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });

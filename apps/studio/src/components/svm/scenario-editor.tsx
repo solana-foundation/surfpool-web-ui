@@ -127,6 +127,7 @@ const ENABLED_PROTOCOLS = [
   'Drift',
   'Pump',
   'PumpSwap',
+  'SolFi',
   'BisonFi',
   // Kamino: one entry per program, since each has its own IDL and program id
   'kamino',

@@ -1,4 +1,5 @@
 import { BISONFI_FAIR_VALUE } from './pmms/bisonfi';
+import { SOLFI_FAIR_VALUE } from './pmms/solfi';
 import { serializeScenarioJson, toScenarioNumber } from './scenarios-api';
 
 export { isValidPmmPrice } from './pmm-price';
@@ -92,5 +93,6 @@ export function buildPmmFairValueScenario(adapter: PmmFairValueAdapter, market: 
 
 // Each PMM keeps its fair-value adapter in lib/pmms and is registered here.
 export const PMM_FAIR_VALUE_ADAPTERS: Record<PmmProtocol, PmmFairValueAdapter> = {
+  [SOLFI_FAIR_VALUE.protocol]: SOLFI_FAIR_VALUE,
   [BISONFI_FAIR_VALUE.protocol]: BISONFI_FAIR_VALUE,
 };
