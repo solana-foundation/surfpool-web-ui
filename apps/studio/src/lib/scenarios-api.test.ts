@@ -584,6 +584,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('USDC vault');
   });
 
+  it('adds the featured BisonFi market addresses', () => {
+    const result = buildAiPrompt('set SOL/USDC depth to 3 SOL and 5 USDC', new Set(['bisonfi']));
+
+    expect(result).toContain('8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo');
+    expect(result).toContain('SOL-USDC-Pool2');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -604,12 +611,12 @@ describe('createdScenarioIdFromToolResult', () => {
             type: 'text',
             text: JSON.stringify({
               error: null,
-              url: 'http://127.0.0.1:18488/scenarios?id=solfi-five-usdc&tab=editor',
+              url: 'http://127.0.0.1:18488/scenarios?id=bisonfi-thin-market&tab=editor',
             }),
           },
         ],
       })
-    ).toBe('solfi-five-usdc');
+    ).toBe('bisonfi-thin-market');
   });
 
   it('does not treat an MCP error response as a created scenario', () => {

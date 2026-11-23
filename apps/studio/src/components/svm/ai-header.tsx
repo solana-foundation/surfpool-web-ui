@@ -248,14 +248,13 @@ export default function AIHeader({ onRefresh, onScenarioNavigate }: AIHeaderProp
               const resultLine = `  Result: ${JSON.stringify(event.content.result, null, 2)}\n`;
               accumulatedResponse += resultLine;
               setStreamedResponse((prev) => prev + resultLine);
-              const scenarioId =
-                [
-                  'create_scenario',
-                  'create_pump_graduation_scenario',
-                  'create_phoenix_collateral_scenario',
-                ].includes(event.content.name)
-                  ? createdScenarioIdFromToolResult(event.content.result)
-                  : null;
+              const scenarioId = [
+                'create_scenario',
+                'create_pump_graduation_scenario',
+                'create_phoenix_collateral_scenario',
+              ].includes(event.content.name)
+                ? createdScenarioIdFromToolResult(event.content.result)
+                : null;
               if (scenarioId) {
                 onRefresh?.();
                 setTimeout(() => {

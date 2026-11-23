@@ -1,7 +1,7 @@
+import { getApiKey, streamAIResponse } from '@/lib/ai-client';
 import { renderWithConfig } from '@/test-utils';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getApiKey, streamAIResponse } from '@/lib/ai-client';
 import AIHeader from './ai-header';
 
 // Polyfill ResizeObserver for headless UI
@@ -95,6 +95,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
     expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
+    expect(screen.getByText('Cross-Pair Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
   });
 
@@ -147,6 +148,18 @@ describe('AIHeader', () => {
     expect(prompt).toContain('spend no more than 25 USDC');
     expect(prompt).toContain('continue selling SOL at its normal 0.1% spread');
     expect(prompt).toContain('To achieve this');
+  });
+
+  it('loads the BisonFi cross-pair arbitrage prompt', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Cross-Pair Arbitrage'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('BisonFi');
+    expect(prompt).toContain('Orca Whirlpool');
+    expect(prompt).toContain('SOL/USDT');
+    expect(prompt).toContain('1.5%');
   });
 
   it('loads a Phoenix price shock prompt for a market the user pastes', () => {
