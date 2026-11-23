@@ -18,7 +18,7 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'pumpswap', name: 'PumpSwap', icon: '/assets/pumpswap.svg' },
   { id: 'bisonfi', name: 'BisonFi', icon: '/assets/bisonfi.svg' },
   { id: 'phoenix-eternal', name: 'Phoenix Eternal', icon: '/assets/phoenix.svg' },
-  { id: 'goonfi', name: 'GoonFi', icon: '/assets/goonfi.webp' },
+  { id: 'goonfi', name: 'GoonFi', icon: '/assets/goonfi.svg' },
 ];
 
 // Shared protocol icon mappings (derived from PROTOCOLS for backwards compatibility)
