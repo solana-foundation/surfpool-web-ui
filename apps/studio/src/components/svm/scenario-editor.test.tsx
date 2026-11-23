@@ -50,6 +50,16 @@ const collateralTemplate = {
   },
 };
 
+const bisonFiTemplate = {
+  id: 'bisonfi-depth',
+  name: 'Depth',
+  protocol: 'BisonFi',
+  description: 'Set market depth',
+  accountType: 'Pool',
+  address: { pubkey: '' },
+  rawLayout: true,
+  properties: [{ path: 'base_reserve', offset: 0, encoding: 'u64' }],
+};
 const PAUSED_CLOCK_WARNING_TEXT =
   'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
 const PAUSED_PLAY = 'Pause clock and step through slots';
@@ -435,6 +445,53 @@ it('fills the oracle input of a GoonFi vault override from the featured market a
   const override = await savedOverride();
   expect(override.account).toEqual({ pubkey: sol.quoteVault });
   expect(override.values).toEqual({ oracle: sol.oracle });
+});
+
+it('keeps a saved BisonFi market and its values without loading the pool', async () => {
+  const account = { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [bisonFiTemplate] : {}),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="bisonfi-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'bisonfi',
+              actionId: bisonFiTemplate.id,
+              protocol: 'BisonFi',
+              action: bisonFiTemplate.name,
+              account,
+              overrides: { base_reserve: '3' },
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`BisonFi: ${bisonFiTemplate.name}`));
+  fireEvent.click(await screen.findByText(bisonFiTemplate.name));
+
+  const reserve = await screen.findByPlaceholderText('Enter base_reserve...');
+  await waitFor(() => expect(reserve).toHaveValue(3));
+  expect(fetchMock.mock.calls.some(([url]) => url === 'http://rpc')).toBe(false);
+
+  fireEvent.change(reserve, { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+  await waitFor(() => {
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    const override = JSON.parse(patch![1].body).overrides[0];
+    expect(override.account).toEqual(account);
+    expect(override.values.base_reserve).toBe(5);
+  });
 });
 
 it('sends a typed u128 past u64 as a decimal string, the only form the backend reads exactly', async () => {

@@ -1,4 +1,5 @@
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
+import { BISONFI_FEATURED_MARKETS } from '@/lib/pmms/bisonfi';
 import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -74,8 +75,8 @@ const createScenarioMock = vi.mocked(createTemplateScenario);
 const fetchTemplatesMock = vi.mocked(fetchScenarioTemplates);
 
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const JUP_USDC = GOONFI_FEATURED_MARKETS[2];
-const FEATURED = ['SOL / USDC', 'HYPE / USDC', 'JUP / USDC', 'PUMP / USDC'];
+const CBBTC_USDC = BISONFI_FEATURED_MARKETS[2];
+const FEATURED = ['SOL / USDC', 'whETH / USDC', 'cbBTC / USDC', 'SOL / USDT'];
 
 const optionNames = (label: string) =>
   within(screen.getByLabelText(label))
@@ -93,7 +94,7 @@ const renderDialog = (onCreated = vi.fn()) =>
   );
 
 beforeEach(() => {
-  fetchTemplatesMock.mockResolvedValue([{ id: 'goonfi-reference-band' }]);
+  fetchTemplatesMock.mockResolvedValue([{ id: 'bisonfi-fair-value' }]);
 });
 
 afterEach(() => {
@@ -101,21 +102,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const GOONFI_PROGRAM = 'goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE';
-const UNLISTED_MARKET = 'DoKKUBzWcv6TYg3vr6kvVzvadnibieYctse6oD6d7Hxs';
-const UNLISTED_ORACLE = 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN';
+const BISONFI_PROGRAM = 'BiSoNHVpsVZW2F7rx2eQ59yQwKxzU5NvBcmKshCSUypi';
+// A live HYPE/USDC pool Studio does not feature, and the mint at its base side.
+const UNLISTED_MARKET = 'DSzgmzz1Ms4qshdeCpE2uWenXXyNbkikw3bzfJRAv7JF';
+const UNLISTED_BASE_MINT = '98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g';
 
-// A surfnet that serves one tagged market account for getAccountInfo.
+const base64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+
+// A surfnet serving one version-3 BisonFi pool with its mints.
 const stubSurfnet = (owner: string) => {
-  const data = new Uint8Array(2048);
-  data.set([48, 188, 47, 53, 52, 88, 50, 154], 0);
-  data.set(new Uint8Array(32).fill(1), 80);
-  data.set(new PublicKey(USDC).toBytes(), 112);
-  data.set(new Uint8Array(32).fill(9), 208);
-  const accountData = btoa(String.fromCharCode(...data));
+  const pool = new Uint8Array(2048);
+  pool.set([...'POOLSTAT'].map((char) => char.charCodeAt(0)).concat([3]), 0);
+  pool.set(new PublicKey(UNLISTED_BASE_MINT).toBytes(), 184);
+  pool.set(new PublicKey(USDC).toBytes(), 216);
   const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
     ok: true,
-    json: async () => ({ result: { value: { owner, data: [accountData, 'base64'] } } }),
+    json: async () => ({ result: { value: { owner, data: [base64(pool), 'base64'] } } }),
   }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -128,7 +130,7 @@ describe('PmmFairValueDialog', () => {
     expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
     expect(fetchTemplatesMock).toHaveBeenCalledTimes(1);
     expect(fetchTemplatesMock).toHaveBeenCalledWith('http://studio');
-    expect(optionNames('PMM protocol')).toEqual(['GoonFi']);
+    expect(optionNames('PMM protocol')).toEqual(['BisonFi']);
     expect(marketNames()).toEqual(FEATURED);
   });
 
@@ -138,87 +140,83 @@ describe('PmmFairValueDialog', () => {
     await screen.findByLabelText('Price of SOL in USDC');
     const search = screen.getByLabelText('PMM market');
 
-    fireEvent.change(search, { target: { value: 'hype/usdc' } });
-    expect(marketNames()).toEqual(['HYPE / USDC']);
+    fireEvent.change(search, { target: { value: 'cbbtc/usdc' } });
+    expect(marketNames()).toEqual(['cbBTC / USDC']);
 
-    fireEvent.change(search, { target: { value: 'GMCJ' } });
+    fireEvent.change(search, { target: { value: '8FnX' } });
     expect(marketNames()).toEqual(['SOL / USDC']);
 
-    fireEvent.change(search, { target: { value: 'usdc' } });
-    expect(marketNames()).toEqual(FEATURED);
+    fireEvent.change(search, { target: { value: 'sol' } });
+    expect(marketNames()).toEqual(['SOL / USDC', 'SOL / USDT']);
 
     fireEvent.change(search, { target: { value: 'bonk' } });
     expect(marketNames()).toEqual([]);
   });
 
-  it('posts the oracle quote and the reference band, which keeps the oracle alive, for the selected market', async () => {
+  it('posts the fair value of the selected pool as a decimal string', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
     renderDialog(onCreated);
 
     await screen.findByLabelText('Price of SOL in USDC');
-    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'jup' } });
-    fireEvent.click(screen.getByRole('button', { name: 'JUP / USDC' }));
-    fireEvent.change(screen.getByLabelText('Price of JUP in USDC'), { target: { value: '1.0001' } });
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'cbbtc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'cbBTC / USDC' }));
+    fireEvent.change(screen.getByLabelText('Price of cbBTC in USDC'), { target: { value: '78467.25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
     const [studioUrl, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
-    const [price, band] = scenario.overrides;
-    expect(scenario.overrides).toHaveLength(2);
+    const [price] = scenario.overrides;
     expect(studioUrl).toBe('http://studio');
-    expect(scenario.tags).toEqual(['goonfi', 'pmm', 'fair-value']);
+    expect(scenario.tags).toEqual(['bisonfi', 'pmm', 'fair-value']);
+    expect(scenario.overrides).toHaveLength(1);
     expect(price).toMatchObject({
-      templateId: 'goonfi-price',
-      account: { pubkey: JUP_USDC.oracle },
+      templateId: 'bisonfi-fair-value',
+      account: { pubkey: CBBTC_USDC.market },
       fetchBeforeUse: true,
     });
-    expect(String(price.values.bid_price_x1e6)).toBe('1000100');
-    expect(String(price.values.ask_price_x1e6)).toBe('1000100');
-    expect(band).toMatchObject({ templateId: 'goonfi-reference-band', account: { pubkey: JUP_USDC.market } });
-    expect(String(band.values.reference_price_a_x1e6)).toBe('1000100');
-    expect(String(band.values.reference_price_b_x1e6)).toBe('1000100');
-    expect(band.values.oracle).toBe(JUP_USDC.oracle);
+    expect(price.values.fair_value).toBe('24284437636903938843894576316416');
   });
 
-  it('reads a typed market address the featured list does not offer and targets its oracle', async () => {
+  it('reads a typed pool address the featured list does not offer, with its mints', async () => {
     const onCreated = vi.fn();
     createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
-    const fetchMock = stubSurfnet(GOONFI_PROGRAM);
+    const fetchMock = stubSurfnet(BISONFI_PROGRAM);
     renderDialog(onCreated);
 
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
     const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
-    expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
-    expect(scenario.overrides[0]).toMatchObject({ templateId: 'goonfi-price', account: { pubkey: UNLISTED_ORACLE } });
-    expect(scenario.overrides[1]).toMatchObject({
-      templateId: 'goonfi-reference-band',
+    expect(scenario.name).toBe('BisonFi 98sMhvDw⋯MXFNMh5g / USDC fair value 100');
+    expect(scenario.overrides[0]).toMatchObject({
+      templateId: 'bisonfi-fair-value',
       account: { pubkey: UNLISTED_MARKET },
-      values: { oracle: UNLISTED_ORACLE },
+      values: { fair_value: '30948500982134506872478105600' },
     });
+    expect(scenario.overrides).toHaveLength(1);
   });
 
   it('offers a read typed market once, not again as a custom address', async () => {
-    stubSurfnet(GOONFI_PROGRAM);
+    stubSurfnet(BISONFI_PROGRAM);
     renderDialog();
 
     await screen.findByLabelText('Price of SOL in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
-    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
 
     expect(marketNames()).toEqual([`Custom · ${UNLISTED_MARKET}`]);
   });
 
-  it('refuses a typed address that is not a GoonFi market', async () => {
+  it('refuses a typed address that is not a BisonFi pool', async () => {
     stubSurfnet('11111111111111111111111111111111');
     renderDialog();
 
@@ -226,13 +224,13 @@ describe('PmmFairValueDialog', () => {
     fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: UNLISTED_MARKET } });
     fireEvent.click(screen.getByRole('button', { name: `Custom · ${UNLISTED_MARKET}` }));
 
-    expect(await screen.findByText(`${UNLISTED_MARKET} is not a GoonFi market account`)).toBeInTheDocument();
+    expect(await screen.findByText(`${UNLISTED_MARKET} is not a BisonFi v3 pool account`)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
   });
 
   it('ignores a market read that resolves after a newer selection', async () => {
     const secondMarket = 'H3chk8rgniKXnToGTdPUFieuHGLQQfBMXVbGp6bR1uMD';
-    const fetchMock = stubSurfnet(GOONFI_PROGRAM);
+    const fetchMock = stubSurfnet(BISONFI_PROGRAM);
     const respond = fetchMock.getMockImplementation()!;
     let releaseFirstRead = () => {};
     fetchMock.mockImplementationOnce(
@@ -245,7 +243,7 @@ describe('PmmFairValueDialog', () => {
       fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: address } });
       fireEvent.click(screen.getByRole('button', { name: `Custom · ${address}` }));
     }
-    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
+    await screen.findByLabelText('Price of 98sMhvDw⋯MXFNMh5g in USDC');
     releaseFirstRead();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -270,8 +268,122 @@ describe('PmmFairValueDialog', () => {
     fireEvent.change(price, { target: { value: '1e3' } });
     expect(createButton).toBeDisabled();
 
-    fireEvent.change(price, { target: { value: '0.0000001' } });
+    fireEvent.change(price, { target: { value: '0.000000000000000000000000001' } });
     fireEvent.click(createButton);
+    expect(await screen.findByText('Price is too small for BisonFi')).toBeInTheDocument();
+    expect(createScenarioMock).not.toHaveBeenCalled();
+  });
+});
+
+const GOONFI_PROGRAM = 'goonuddtQRrWqqn5nFyczVKaie28f3kDkHWkHtURSLE';
+const GOONFI_UNLISTED_MARKET = 'DoKKUBzWcv6TYg3vr6kvVzvadnibieYctse6oD6d7Hxs';
+const GOONFI_UNLISTED_ORACLE = 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN';
+const GOONFI_JUP_USDC = GOONFI_FEATURED_MARKETS[2];
+
+// A surfnet that serves one tagged GoonFi market account for getAccountInfo.
+const stubGoonfiSurfnet = (owner: string) => {
+  const data = new Uint8Array(2048);
+  data.set([48, 188, 47, 53, 52, 88, 50, 154], 0);
+  data.set(new Uint8Array(32).fill(1), 80);
+  data.set(new PublicKey(USDC).toBytes(), 112);
+  data.set(new Uint8Array(32).fill(9), 208);
+  const accountData = base64(data);
+  const fetchMock = vi.fn(async (_url: string, _init: { body: string }) => ({
+    ok: true,
+    json: async () => ({ result: { value: { owner, data: [accountData, 'base64'] } } }),
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+};
+
+describe('PmmFairValueDialog with GoonFi', () => {
+  beforeEach(() => {
+    fetchTemplatesMock.mockResolvedValue([{ id: 'goonfi-reference-band' }]);
+  });
+
+  it('lists GoonFi and its featured markets', async () => {
+    renderDialog();
+
+    expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
+    expect(optionNames('PMM protocol')).toEqual(['GoonFi']);
+    expect(marketNames()).toEqual(['SOL / USDC', 'HYPE / USDC', 'JUP / USDC', 'PUMP / USDC']);
+  });
+
+  it('posts the oracle quote and the reference band, which keeps the oracle alive, for the selected market', async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'jup' } });
+    fireEvent.click(screen.getByRole('button', { name: 'JUP / USDC' }));
+    fireEvent.change(screen.getByLabelText('Price of JUP in USDC'), { target: { value: '1.0001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
+    const [price, band] = scenario.overrides;
+    expect(scenario.overrides).toHaveLength(2);
+    expect(scenario.tags).toEqual(['goonfi', 'pmm', 'fair-value']);
+    expect(price).toMatchObject({
+      templateId: 'goonfi-price',
+      account: { pubkey: GOONFI_JUP_USDC.oracle },
+      fetchBeforeUse: true,
+    });
+    expect(String(price.values.bid_price_x1e6)).toBe('1000100');
+    expect(String(price.values.ask_price_x1e6)).toBe('1000100');
+    expect(band).toMatchObject({ templateId: 'goonfi-reference-band', account: { pubkey: GOONFI_JUP_USDC.market } });
+    expect(String(band.values.reference_price_a_x1e6)).toBe('1000100');
+    expect(String(band.values.reference_price_b_x1e6)).toBe('1000100');
+    expect(band.values.oracle).toBe(GOONFI_JUP_USDC.oracle);
+  });
+
+  it('reads a typed market address the featured list does not offer and targets its oracle', async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    const fetchMock = stubGoonfiSurfnet(GOONFI_PROGRAM);
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: GOONFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${GOONFI_UNLISTED_MARKET}` }));
+    await screen.findByLabelText('Price of 4vJ9JU1b⋯4P3bkLKi in USDC');
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
+    expect(scenario.name).toBe('GoonFi 4vJ9JU1b⋯4P3bkLKi / USDC fair value 100');
+    expect(scenario.overrides[0]).toMatchObject({
+      templateId: 'goonfi-price',
+      account: { pubkey: GOONFI_UNLISTED_ORACLE },
+    });
+    expect(scenario.overrides[1]).toMatchObject({
+      templateId: 'goonfi-reference-band',
+      account: { pubkey: GOONFI_UNLISTED_MARKET },
+      values: { oracle: GOONFI_UNLISTED_ORACLE },
+    });
+  });
+
+  it('refuses a typed address that is not a GoonFi market', async () => {
+    stubGoonfiSurfnet('11111111111111111111111111111111');
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: GOONFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${GOONFI_UNLISTED_MARKET}` }));
+
+    expect(await screen.findByText(`${GOONFI_UNLISTED_MARKET} is not a GoonFi market account`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+  });
+
+  it('refuses a price with more decimals than the market supports without posting', async () => {
+    renderDialog();
+
+    const price = await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(price, { target: { value: '0.0000001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
     expect(await screen.findByText('Price has more decimals than this market supports, at most 6')).toBeInTheDocument();
     expect(createScenarioMock).not.toHaveBeenCalled();
   });
