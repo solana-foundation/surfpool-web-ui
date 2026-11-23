@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LosslessNumber } from 'lossless-json';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callMCPTool, fetchMCPTools } from './ai-client';
 import {
   buildAiPrompt,
@@ -584,6 +584,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('USDC vault 3RWFAQBRkNGq7CMGcTLK3kXDgFTe9jgMeFYqk8nHwcWh');
   });
 
+  it('adds the featured BisonFi market addresses', () => {
+    const result = buildAiPrompt('set SOL/USDC depth to 3 SOL and 5 USDC', new Set(['bisonfi']));
+
+    expect(result).toContain('8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo');
+    expect(result).toContain('SOL-USDC-Pool2');
+  });
+
   it('preserves base prompt before protocol line', () => {
     const result = buildAiPrompt('create a scenario', new Set(['pyth']));
     expect(result.startsWith('create a scenario')).toBe(true);
@@ -604,12 +611,12 @@ describe('createdScenarioIdFromToolResult', () => {
             type: 'text',
             text: JSON.stringify({
               error: null,
-              url: 'http://127.0.0.1:18488/scenarios?id=humidifi-five-usdc&tab=editor',
+              url: 'http://127.0.0.1:18488/scenarios?id=bisonfi-thin-market&tab=editor',
             }),
           },
         ],
       })
-    ).toBe('humidifi-five-usdc');
+    ).toBe('bisonfi-thin-market');
   });
 
   it('does not treat an MCP error response as a created scenario', () => {
@@ -800,8 +807,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('parseScenariosJson keeps an unsafe u64 exact and serializeScenarioJson round-trips it', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     expect(serializeScenarioJson(parseScenariosJson(getJson))).toContain(EXACT);
   });
 
@@ -826,8 +832,7 @@ describe('u64 precision across the edit/save flow (path 2)', () => {
 
   it('end to end: GET -> flatten -> PATCH body keeps the exact u64', () => {
     const getJson =
-      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` +
-      `"values":{"sqrt_price":${EXACT}}}]}]`;
+      `[{"id":"s","name":"n","overrides":[{"id":"o","templateId":"t",` + `"values":{"sqrt_price":${EXACT}}}]}]`;
     const scenarios = parseScenariosJson(getJson) as Array<{ overrides: Array<{ values: Record<string, unknown> }> }>;
     const flat = flattenOverrideValues(scenarios[0].overrides[0].values, []);
     const patchBody = serializeScenarioJson({ id: 's', overrides: [{ values: flat }] });
