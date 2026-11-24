@@ -1,6 +1,7 @@
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
 import { BISONFI_FEATURED_MARKETS } from '@/lib/pmms/bisonfi';
 import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
+import { SOLFI_FEATURED_MARKETS } from '@/lib/pmms/solfi';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -385,6 +386,135 @@ describe('PmmFairValueDialog with GoonFi', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
 
     expect(await screen.findByText('Price has more decimals than this market supports, at most 6')).toBeInTheDocument();
+    expect(createScenarioMock).not.toHaveBeenCalled();
+  });
+});
+
+const SOLFI_PROGRAM = 'SV2EYYJyRz2YhfXwXnhNAevDEui5Q6yrfyo13WtupPF';
+const SOLFI_ORACLE_PROGRAM = 'E2uCGJ4TtYyKPGaK57UMfbs9sgaumwDEZF1aAY6fF3mS';
+// A live SolFi market Studio does not feature, with its oracle and the mint behind its base vault.
+const SOLFI_UNLISTED_MARKET = '2Q6S8p9iZNzMvpTemiC56HqCJ3F3szNoyRkvqEKfCanY';
+const SOLFI_UNLISTED_ORACLE = '6RwCEKk7rR1ph5XNUMUqght4eHYpFhcaURWJrXb4FE3E';
+const SOLFI_UNLISTED_BASE_MINT = 'CrAr4RRJMBVwRsZtT62pEhfA9H5utymC2mVx8e7FreP2';
+const BASE_VAULT = '11111111111111111111111111111112';
+const QUOTE_VAULT = '11111111111111111111111111111113';
+
+const parsed = (info: Record<string, unknown>) => ({ owner: 'token', data: { parsed: { info } } });
+
+// A surfnet serving one SolFi market, its oracle and vaults, and the vaults' mints.
+const stubSolfiSurfnet = (owner: string) => {
+  const market = new Uint8Array(1728);
+  market.set(new PublicKey(SOLFI_UNLISTED_ORACLE).toBytes(), 24);
+  market.set(new PublicKey(BASE_VAULT).toBytes(), 120);
+  market.set(new PublicKey(QUOTE_VAULT).toBytes(), 152);
+  const fetchMock = vi.fn(async (_url: string, init: { body: string }) => {
+    const { method, params } = JSON.parse(init.body);
+    const result =
+      method === 'getAccountInfo'
+        ? { value: { owner, data: [base64(market), 'base64'] } }
+        : params[0][0] === SOLFI_UNLISTED_ORACLE
+          ? {
+              value: [
+                { owner: SOLFI_ORACLE_PROGRAM, data: [base64(new Uint8Array(168)), 'base64'] },
+                parsed({ mint: SOLFI_UNLISTED_BASE_MINT }),
+                parsed({ mint: USDC }),
+              ],
+            }
+          : { value: [parsed({ decimals: 8 }), parsed({ decimals: 6 })] };
+    return { ok: true, json: async () => ({ result }) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+};
+
+describe('PmmFairValueDialog with SolFi', () => {
+  beforeEach(() => {
+    fetchTemplatesMock.mockResolvedValue([{ id: 'solfi-price' }]);
+  });
+
+  it('lists SolFi and its featured markets', async () => {
+    renderDialog();
+
+    expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
+    expect(optionNames('PMM protocol')).toEqual(['SolFi']);
+    expect(marketNames()).toEqual(['SOL / USDC', 'USDT / USDC', 'HYPE / USDC', 'PUMP / USDC']);
+  });
+
+  it("posts both price fields to the selected market's oracle", async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'hype' } });
+    fireEvent.click(screen.getByRole('button', { name: 'HYPE / USDC' }));
+    fireEvent.change(screen.getByLabelText('Price of HYPE in USDC'), { target: { value: '22.55' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
+    const [price] = scenario.overrides;
+    expect(scenario.tags).toEqual(['solfi', 'pmm', 'fair-value']);
+    expect(scenario.overrides).toHaveLength(1);
+    expect(price).toMatchObject({
+      templateId: 'solfi-price',
+      account: { pubkey: SOLFI_FEATURED_MARKETS[2].oracle },
+      fetchBeforeUse: true,
+    });
+    expect(price.values.price_exponent).toBe(-10);
+    expect(String(price.values.price_coefficient)).toBe('225500000');
+  });
+
+  it('reads a typed market address the featured list does not offer, with its oracle and decimals', async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    const fetchMock = stubSolfiSurfnet(SOLFI_PROGRAM);
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: SOLFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${SOLFI_UNLISTED_MARKET}` }));
+    await screen.findByLabelText('Price of CrAr4RRJ⋯8e7FreP2 in USDC');
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).params[0]).toEqual([
+      SOLFI_UNLISTED_ORACLE,
+      BASE_VAULT,
+      QUOTE_VAULT,
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).params[0]).toEqual([SOLFI_UNLISTED_BASE_MINT, USDC]);
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
+    expect(scenario.name).toBe('SolFi CrAr4RRJ⋯8e7FreP2 / USDC fair value 100');
+    expect(scenario.overrides[0]).toMatchObject({
+      templateId: 'solfi-price',
+      account: { pubkey: SOLFI_UNLISTED_ORACLE },
+    });
+    expect(String(scenario.overrides[0].values.price_coefficient)).toBe('10000000000');
+    expect(scenario.overrides).toHaveLength(1);
+  });
+
+  it('refuses a typed address that is not a SolFi market', async () => {
+    stubSolfiSurfnet('11111111111111111111111111111111');
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: SOLFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${SOLFI_UNLISTED_MARKET}` }));
+
+    expect(await screen.findByText(`${SOLFI_UNLISTED_MARKET} is not a SolFi market account`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+  });
+
+  it('refuses a price with more decimals than the market supports', async () => {
+    renderDialog();
+
+    const price = await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(price, { target: { value: '0.00000000001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    expect(await screen.findByText('Price has more decimals than this market supports, at most 7')).toBeInTheDocument();
     expect(createScenarioMock).not.toHaveBeenCalled();
   });
 });

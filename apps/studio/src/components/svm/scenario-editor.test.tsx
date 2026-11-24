@@ -447,6 +447,113 @@ it('fills the oracle input of a GoonFi vault override from the featured market a
   expect(override.values).toEqual({ oracle: sol.oracle });
 });
 
+it('keeps a saved SolFi account and its values without loading the account', async () => {
+  const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+  const template = {
+    id: 'solfi-price',
+    name: 'SolFi price',
+    protocol: 'SolFi',
+    description: 'Reprice the oracle',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [{ path: 'price_coefficient', offset: 0, encoding: 'u64' }],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : {}),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="solfi-restore-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: template.id,
+              protocol: 'SolFi',
+              action: template.name,
+              account: { pubkey: oracle },
+              overrides: { price_coefficient: '500' },
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  const coefficient = await screen.findByPlaceholderText('Enter price_coefficient...');
+  await waitFor(() => expect(coefficient).toHaveValue(500));
+  expect(rpcParams()).toEqual([]);
+
+  fireEvent.change(coefficient, { target: { value: '600' } });
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: oracle });
+  expect(override.values.price_coefficient).toBe(600);
+});
+
+it('fills the oracle input of a SolFi vault override from the featured market and saves it', async () => {
+  const template = {
+    id: 'solfi-vault-balance',
+    name: 'SolFi vault balance',
+    protocol: 'SolFi',
+    description: 'Limit a payout vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'oracle', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="solfi-oracle-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: template.id,
+              protocol: 'SolFi',
+              action: template.name,
+              account: { pubkey: '' },
+              overrides: {},
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(
+    within(await screen.findByLabelText('SolFi vault results')).getByRole('button', {
+      name: /^SOL \/ USDC \(USDC vault\)/,
+    })
+  );
+  const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter oracle...')).toHaveValue(oracle));
+
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: 'GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic' });
+  expect(override.values).toEqual({ oracle });
+});
+
 it('keeps a saved BisonFi market and its values without loading the pool', async () => {
   const account = { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' };
   fetchMock.mockImplementation(async (url: string) => ({
