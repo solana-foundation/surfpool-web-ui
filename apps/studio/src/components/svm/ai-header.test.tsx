@@ -97,6 +97,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
     expect(screen.getByText('Cross-Pair Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('Chainlink Price Crash')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {
@@ -170,6 +171,24 @@ describe('AIHeader', () => {
     const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
     expect(prompt).toContain('<PASTE_MARKET_SYMBOL_OR_ADDRESS>');
     expect(prompt).toContain('10%');
+  });
+
+  it('sends the Chainlink chip to the model limited to Chainlink', async () => {
+    vi.mocked(getApiKey).mockReturnValue('test-api-key');
+    vi.mocked(streamAIResponse).mockImplementation(async function* () {
+      yield { type: 'done' as const, content: null };
+    });
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Chainlink Price Crash'));
+    fireEvent.keyDown(screen.getByPlaceholderText('Describe a scenario to simulate...'), { key: 'Enter' });
+
+    await waitFor(() => expect(streamAIResponse).toHaveBeenCalled());
+    const prompt = vi.mocked(streamAIResponse).mock.calls[0][1];
+    expect(prompt).toContain('SOL / USD');
+    expect(prompt).toContain('Use only these protocols: Chainlink.');
+    // A chip states only the goal; template ids live in the backend's llm_context.
+    expect(prompt).not.toContain('chainlink-data-feed');
   });
 
   it('renders the model selector button', () => {
