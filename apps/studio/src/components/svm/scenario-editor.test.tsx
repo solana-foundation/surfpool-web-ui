@@ -1,6 +1,6 @@
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ScenarioEditor from './scenario-editor';
 
@@ -49,6 +49,16 @@ const collateralTemplate = {
   },
 };
 
+const bisonFiTemplate = {
+  id: 'bisonfi-depth',
+  name: 'Depth',
+  protocol: 'BisonFi',
+  description: 'Set market depth',
+  accountType: 'Pool',
+  address: { pubkey: '' },
+  rawLayout: true,
+  properties: [{ path: 'base_reserve', offset: 0, encoding: 'u64' }],
+};
 const PAUSED_CLOCK_WARNING_TEXT =
   'Time-sensitive scenario: pausing the clock may make the program refuse transactions due to time mismatches. Running clock is recommended.';
 const PAUSED_PLAY = 'Pause clock and step through slots';
@@ -399,6 +409,178 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+it('keeps a saved SolFi account and its values without loading the account', async () => {
+  const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+  const template = {
+    id: 'solfi-price',
+    name: 'SolFi price',
+    protocol: 'SolFi',
+    description: 'Reprice the oracle',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [{ path: 'price_coefficient', offset: 0, encoding: 'u64' }],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : {}),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="solfi-restore-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: template.id,
+              protocol: 'SolFi',
+              action: template.name,
+              account: { pubkey: oracle },
+              overrides: { price_coefficient: '500' },
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  const coefficient = await screen.findByPlaceholderText('Enter price_coefficient...');
+  await waitFor(() => expect(coefficient).toHaveValue(500));
+  expect(rpcParams()).toEqual([]);
+
+  fireEvent.change(coefficient, { target: { value: '600' } });
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: oracle });
+  expect(override.values.price_coefficient).toBe(600);
+});
+
+it('fills the oracle input of a SolFi vault override from the featured market and saves it', async () => {
+  const template = {
+    id: 'solfi-vault-balance',
+    name: 'SolFi vault balance',
+    protocol: 'SolFi',
+    description: 'Limit a payout vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'oracle', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="solfi-oracle-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'solfi',
+              actionId: template.id,
+              protocol: 'SolFi',
+              action: template.name,
+              account: { pubkey: '' },
+              overrides: {},
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`SolFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(
+    within(await screen.findByLabelText('SolFi vault results')).getByRole('button', {
+      name: /^SOL \/ USDC \(USDC vault\)/,
+    })
+  );
+  const oracle = '2ny7eGyZCoeEVTkNLf5HcnJFBKkyA4p4gcrtb3b8y8ou';
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter oracle...')).toHaveValue(oracle));
+
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: 'GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic' });
+  expect(override.values).toEqual({ oracle });
+});
+
+it('keeps a saved BisonFi market and its values without loading the pool', async () => {
+  const account = { pubkey: '8FnX3xo2yYw3EUE6w3nQA4GfXGS9wpK6oj3veJpbFzLo' };
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [bisonFiTemplate] : {}),
+  }));
+  render(
+    <ScenarioEditor
+      scenarioId="bisonfi-test"
+      initialSteps={[
+        {
+          id: 'slot',
+          name: 'Slot',
+          type: 'slot',
+          actions: [
+            {
+              protocolId: 'bisonfi',
+              actionId: bisonFiTemplate.id,
+              protocol: 'BisonFi',
+              action: bisonFiTemplate.name,
+              account,
+              overrides: { base_reserve: '3' },
+            },
+          ],
+        },
+      ]}
+    />
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`BisonFi: ${bisonFiTemplate.name}`));
+  fireEvent.click(await screen.findByText(bisonFiTemplate.name));
+
+  const reserve = await screen.findByPlaceholderText('Enter base_reserve...');
+  await waitFor(() => expect(reserve).toHaveValue(3));
+  expect(fetchMock.mock.calls.some(([url]) => url === 'http://rpc')).toBe(false);
+
+  fireEvent.change(reserve, { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Update Action' }));
+  await waitFor(() => {
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch).toBeDefined();
+    const override = JSON.parse(patch![1].body).overrides[0];
+    expect(override.account).toEqual(account);
+    expect(override.values.base_reserve).toBe(5);
+  });
+});
+
+it('sends a typed u128 past u64 as a decimal string, the only form the backend reads exactly', async () => {
+  const template = {
+    id: 'raw-u128-field',
+    name: 'Override Wide Value',
+    protocol: 'Phoenix Eternal',
+    description: 'Set a 128-bit field',
+    address: { pubkey: '' },
+    rawLayout: true,
+    properties: [{ path: 'wide_value', offset: 0, encoding: 'u128' }],
+  };
+  await openEditor(template, {}, { pubkey: 'account' });
+  fireEvent.change(await screen.findByPlaceholderText('Enter wide_value...'), {
+    target: { value: '15474250491067253436239052800' },
+  });
+
+  expect((await savedOverride()).values).toEqual({ wide_value: '15474250491067253436239052800' });
 });
 
 const rpcCalls = () =>

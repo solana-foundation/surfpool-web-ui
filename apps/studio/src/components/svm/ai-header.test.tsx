@@ -1,7 +1,7 @@
 import { getApiKey, streamAIResponse } from '@/lib/ai-client';
 import { renderWithConfig } from '@/test-utils';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import AIHeader from './ai-header';
 
 // Polyfill ResizeObserver for headless UI
@@ -74,8 +74,8 @@ vi.mock('@surfpool/ui', async (importOriginal) => {
 });
 
 describe('AIHeader', () => {
-  afterEach(() => {
-    vi.mocked(getApiKey).mockReturnValue(null);
+  beforeEach(() => {
+    vi.mocked(getApiKey).mockReturnValue('test-api-key');
     vi.mocked(streamAIResponse).mockReset();
   });
 
@@ -94,6 +94,8 @@ describe('AIHeader', () => {
     expect(screen.getByText('Pump Graduation')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Pool')).toBeInTheDocument();
     expect(screen.getByText('PumpSwap Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
+    expect(screen.getByText('Cross-Pair Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
     expect(screen.getByText('Chainlink Price Crash')).toBeInTheDocument();
   });
@@ -133,6 +135,34 @@ describe('AIHeader', () => {
     expect(prompt).toContain('do not build or execute a swap');
   });
 
+  it('loads the deployed-program-verified SolFi PMM risk-off scenario', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('SolFi Risk-Off'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('SOL crashes to $50');
+    expect(prompt).toContain(
+      'the PMM becomes cautious about accumulating more SOL without completely leaving the market'
+    );
+    expect(prompt).toContain('buy SOL at a 1% discount');
+    expect(prompt).toContain('spend no more than 25 USDC');
+    expect(prompt).toContain('continue selling SOL at its normal 0.1% spread');
+    expect(prompt).toContain('To achieve this');
+  });
+
+  it('loads the BisonFi cross-pair arbitrage prompt', () => {
+    renderWithConfig(<AIHeader />);
+
+    fireEvent.click(screen.getByText('Cross-Pair Arbitrage'));
+
+    const prompt = (screen.getByPlaceholderText('Describe a scenario to simulate...') as HTMLTextAreaElement).value;
+    expect(prompt).toContain('BisonFi');
+    expect(prompt).toContain('Orca Whirlpool');
+    expect(prompt).toContain('SOL/USDT');
+    expect(prompt).toContain('1.5%');
+  });
+
   it('loads a Phoenix price shock prompt for a market the user pastes', () => {
     renderWithConfig(<AIHeader />);
 
@@ -164,5 +194,93 @@ describe('AIHeader', () => {
   it('renders the model selector button', () => {
     renderWithConfig(<AIHeader />);
     expect(screen.getByLabelText('Select AI model')).toBeInTheDocument();
+  });
+
+  it('does not refresh the scenarios page when generation finishes without creating a scenario', async () => {
+    vi.mocked(streamAIResponse).mockImplementation(async function* () {
+      yield { type: 'text' as const, content: 'I need more information.' };
+      yield { type: 'done' as const, content: null };
+    });
+    const onRefresh = vi.fn();
+    renderWithConfig(<AIHeader onRefresh={onRefresh} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Describe a scenario to simulate...'), {
+      target: { value: 'Set the vault to 5 USDC' },
+    });
+    fireEvent.click(screen.getByLabelText('Generate scenario'));
+
+    await waitFor(() => expect(screen.getByText(/I need more information/)).toBeInTheDocument());
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('refreshes only after create_scenario returns a created scenario URL', async () => {
+    vi.mocked(streamAIResponse).mockImplementation(async function* () {
+      yield {
+        type: 'tool_result' as const,
+        content: {
+          name: 'get_override_template',
+          result: { id: 'not-a-scenario' },
+        },
+      };
+      yield {
+        type: 'tool_result' as const,
+        content: {
+          name: 'create_scenario',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: null,
+                  url: 'http://127.0.0.1:18488/scenarios?id=five-usdc&tab=editor',
+                }),
+              },
+            ],
+          },
+        },
+      };
+      yield { type: 'done' as const, content: null };
+    });
+    const onRefresh = vi.fn();
+    renderWithConfig(<AIHeader onRefresh={onRefresh} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Describe a scenario to simulate...'), {
+      target: { value: 'Set the vault to 5 USDC' },
+    });
+    fireEvent.click(screen.getByLabelText('Generate scenario'));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+  });
+
+  it('refreshes after the Phoenix collateral tool creates a scenario', async () => {
+    vi.mocked(streamAIResponse).mockImplementation(async function* () {
+      yield {
+        type: 'tool_result' as const,
+        content: {
+          name: 'create_phoenix_collateral_scenario',
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: null,
+                  url: 'http://127.0.0.1:18488/scenarios?id=phoenix-collateral&tab=editor',
+                }),
+              },
+            ],
+          },
+        },
+      };
+      yield { type: 'done' as const, content: null };
+    });
+    const onRefresh = vi.fn();
+    renderWithConfig(<AIHeader onRefresh={onRefresh} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Describe a scenario to simulate...'), {
+      target: { value: 'Create a Phoenix collateral scenario' },
+    });
+    fireEvent.click(screen.getByLabelText('Generate scenario'));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
   });
 });
