@@ -69,7 +69,7 @@ describe('ScenarioCard', () => {
             { protocolId: 'pyth', actionId: 'a1', protocol: 'Pyth', action: 'A1' },
             { protocolId: 'raydium', actionId: 'a2', protocol: 'Raydium', action: 'A2' },
             { protocolId: 'kamino', actionId: 'a3', protocol: 'Kamino', action: 'A3' },
-            { protocolId: 'drift', actionId: 'a4', protocol: 'Drift', action: 'A4' },
+            { protocolId: 'solfi', actionId: 'a4', protocol: 'SolFi', action: 'A4' },
           ],
         },
       ],
