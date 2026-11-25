@@ -11,7 +11,6 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'jupiter', name: 'Jupiter', icon: '/assets/jupiter.svg' },
   { id: 'raydium', name: 'Raydium', icon: '/assets/raydium.svg' },
   { id: 'whirlpool', name: 'Whirlpool', icon: '/assets/whirlpool.svg' },
-  { id: 'drift', name: 'Drift', icon: '/assets/drift.svg' },
   { id: 'kamino', name: 'Kamino', icon: '/assets/kamino.svg' },
   { id: 'meteora', name: 'Meteora', icon: '/assets/meteora.svg' },
   { id: 'pump', name: 'Pump', icon: '/assets/pump.svg' },

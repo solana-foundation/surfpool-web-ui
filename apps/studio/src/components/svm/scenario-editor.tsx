@@ -124,7 +124,6 @@ interface ScenarioEditorProps {
 const ENABLED_PROTOCOLS = [
   'Pyth',
   'Raydium',
-  'Drift',
   'Pump',
   'PumpSwap',
   'SolFi',

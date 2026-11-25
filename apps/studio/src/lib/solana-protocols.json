@@ -131,34 +131,6 @@
       ]
     },
     {
-      "id": "drift",
-      "title": "Drift Protocol",
-      "description": "Override perpetual futures states",
-      "icon_url": "/assets/drift.svg",
-      "actions": [
-        {
-          "id": "drift_set_position_size",
-          "title": "Set Position Size",
-          "description": "Override position notional value to test max leverage"
-        },
-        {
-          "id": "drift_set_collateral",
-          "title": "Set Collateral",
-          "description": "Override account collateral to test liquidation thresholds"
-        },
-        {
-          "id": "drift_set_funding_rate",
-          "title": "Set Funding Rate",
-          "description": "Override perpetual funding to test payment scenarios"
-        },
-        {
-          "id": "drift_trigger_liquidation",
-          "title": "Force Liquidation",
-          "description": "Make position liquidatable to test liquidation mechanics"
-        }
-      ]
-    },
-    {
       "id": "kamino",
       "title": "Kamino Finance",
       "description": "Override lending protocol states",
