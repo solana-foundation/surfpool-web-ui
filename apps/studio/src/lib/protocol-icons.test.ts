@@ -8,6 +8,7 @@ describe('PROTOCOLS', () => {
     expect(ids).toContain('pyth');
     expect(ids).toContain('jupiter');
     expect(ids).toContain('raydium');
+    expect(ids).toContain('humidifi');
     expect(ids).toContain('solfi');
     expect(ids).toContain('bisonfi');
   });
@@ -28,6 +29,7 @@ describe('PROTOCOL_ICONS', () => {
     expect(PROTOCOL_ICONS['solfi']).toBe('/assets/solfi-badged.png');
     expect(PROTOCOL_ICONS['bisonfi']).toBe('/assets/bisonfi.svg');
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
+    expect(PROTOCOL_ICONS['humidifi']).toBe('/assets/humidifi.svg');
   });
 
   it('has the same number of entries as PROTOCOLS', () => {
@@ -40,6 +42,7 @@ describe('getProtocolIcon', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
     expect(getProtocolIcon('solfi')).toBe('/assets/solfi-badged.png');
     expect(getProtocolIcon('phoenix-eternal')).toBe('/assets/phoenix.svg');
+    expect(getProtocolIcon('humidifi')).toBe('/assets/humidifi.svg');
   });
 
   it('returns default fallback for unknown protocol', () => {

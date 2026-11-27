@@ -1,5 +1,6 @@
 import type { TokenSelectorOption } from '@/components/svm/token-selector-options';
 import { BISONFI_FEATURED } from './pmms/bisonfi';
+import { HUMIDIFI_FEATURED } from './pmms/humidifi';
 import { SOLFI_FEATURED } from './pmms/solfi';
 
 export type FeaturedAccountOption = TokenSelectorOption & {
@@ -21,7 +22,7 @@ export type FeaturedProtocol = {
 };
 
 // Each protocol keeps its accounts and AI context in its own file and is registered here.
-const FEATURED_PROTOCOLS: readonly FeaturedProtocol[] = [SOLFI_FEATURED, BISONFI_FEATURED];
+const FEATURED_PROTOCOLS: readonly FeaturedProtocol[] = [HUMIDIFI_FEATURED, SOLFI_FEATURED, BISONFI_FEATURED];
 
 const FEATURED_ACCOUNTS = new Map<string, FeaturedAccounts>(
   FEATURED_PROTOCOLS.flatMap(({ templates }) => Object.entries(templates))

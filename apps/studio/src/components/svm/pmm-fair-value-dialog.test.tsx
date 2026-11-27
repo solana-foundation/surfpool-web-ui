@@ -1,5 +1,6 @@
 import { createTemplateScenario, fetchScenarioTemplates } from '@/lib/pmm-fair-value';
 import { BISONFI_FEATURED_MARKETS } from '@/lib/pmms/bisonfi';
+import { HUMIDIFI_FEATURED_MARKETS } from '@/lib/pmms/humidifi';
 import { SOLFI_FEATURED_MARKETS } from '@/lib/pmms/solfi';
 import { PublicKey } from '@solana/web3.js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -271,6 +272,127 @@ describe('PmmFairValueDialog', () => {
     fireEvent.change(price, { target: { value: '0.000000000000000000000000001' } });
     fireEvent.click(createButton);
     expect(await screen.findByText('Price is too small for BisonFi')).toBeInTheDocument();
+    expect(createScenarioMock).not.toHaveBeenCalled();
+  });
+});
+
+const HUMIDIFI_PROGRAM = '9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp';
+// A live WETH/USDC market that Studio does not feature, with its masked quote and base mint words.
+const HUMIDIFI_UNLISTED_MARKET = 'iAMtZieUtpLwB3dzWw8Fo3H3FPkMFy3ej52URusseR1';
+const MASKED_QUOTE_MINT = 'fec63e5dc433f1c1faa6493b2fded63577785d9355e141e0b965ba52c338fd65';
+const MASKED_BASE_MINT = '5ed95c2469e0fd205775694ebbaa6888fb31dedd06057ed9f8da940bbad3f7ac';
+
+const hexBytes = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (byte) => parseInt(byte, 16));
+const mintAccount = (decimals: number) => {
+  const data = new Uint8Array(82);
+  data[44] = decimals;
+  return { data: [base64(data), 'base64'] };
+};
+
+// A surfnet that serves one schema-8 HumidiFi market for getAccountInfo and its two mints for getMultipleAccounts.
+const stubHumidifiSurfnet = (owner: string) => {
+  const market = new Uint8Array(1728);
+  market.set([44, 90, 19, 124, 56, 111, 47, 150], 8);
+  market.set(hexBytes(MASKED_QUOTE_MINT), 384);
+  market.set(hexBytes(MASKED_BASE_MINT), 416);
+  market.set([8], 1720);
+  const fetchMock = vi.fn(async (_url: string, init: { body: string }) => {
+    const { method } = JSON.parse(init.body);
+    const result =
+      method === 'getMultipleAccounts'
+        ? { value: [mintAccount(8), mintAccount(6)] }
+        : { value: { owner, data: [base64(market), 'base64'] } };
+    return { ok: true, json: async () => ({ result }) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+};
+
+describe('PmmFairValueDialog with HumidiFi', () => {
+  beforeEach(() => {
+    fetchTemplatesMock.mockResolvedValue([{ id: 'humidifi-price' }]);
+  });
+
+  it('lists HumidiFi and its featured markets', async () => {
+    renderDialog();
+
+    expect(await screen.findByLabelText('Price of SOL in USDC')).toHaveValue('100');
+    expect(optionNames('PMM protocol')).toEqual(['HumidiFi']);
+    expect(marketNames()).toEqual(['SOL / USDC', 'PENGU / USDC', 'WET / USDC', 'PUMP / USDC']);
+  });
+
+  it('posts the fair value for the selected market', async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: 'wet' } });
+    fireEvent.click(screen.getByRole('button', { name: 'WET / USDC' }));
+    fireEvent.change(screen.getByLabelText('Price of WET in USDC'), { target: { value: '0.35' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { overrides: any[]; tags: string[] }];
+    const [price] = scenario.overrides;
+    expect(scenario.tags).toEqual(['humidifi', 'pmm', 'fair-value']);
+    expect(scenario.overrides).toHaveLength(1);
+    expect(price).toMatchObject({
+      templateId: 'humidifi-price',
+      account: { pubkey: HUMIDIFI_FEATURED_MARKETS[2].market },
+      fetchBeforeUse: true,
+    });
+    expect(String(price.values.fair_value)).toBe('98516241848729');
+  });
+
+  it('reads a typed market address the featured list does not offer, unmasking its mints', async () => {
+    const onCreated = vi.fn();
+    createScenarioMock.mockResolvedValue({ id: 'scenario-id' });
+    const fetchMock = stubHumidifiSurfnet(HUMIDIFI_PROGRAM);
+    renderDialog(onCreated);
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: HUMIDIFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${HUMIDIFI_UNLISTED_MARKET}` }));
+    await screen.findByLabelText('Price of 7vfCXTUX⋯b963voxs in USDC');
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('scenario-id'));
+    expect(fetchMock.mock.calls[0][0]).toBe('http://rpc');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).params[0]).toEqual([
+      '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs',
+      USDC,
+    ]);
+    const [, scenario] = createScenarioMock.mock.calls[0] as [string, { name: string; overrides: any[] }];
+    expect(scenario.name).toBe('HumidiFi 7vfCXTUX⋯b963voxs / USDC fair value 100');
+    expect(scenario.overrides[0]).toMatchObject({
+      templateId: 'humidifi-price',
+      account: { pubkey: HUMIDIFI_UNLISTED_MARKET },
+    });
+    expect(String(scenario.overrides[0].values.fair_value)).toBe('281474976710656');
+    expect(scenario.overrides).toHaveLength(1);
+  });
+
+  it('refuses a typed address that is not a HumidiFi market', async () => {
+    stubHumidifiSurfnet('11111111111111111111111111111111');
+    renderDialog();
+
+    await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(screen.getByLabelText('PMM market'), { target: { value: HUMIDIFI_UNLISTED_MARKET } });
+    fireEvent.click(screen.getByRole('button', { name: `Custom · ${HUMIDIFI_UNLISTED_MARKET}` }));
+
+    expect(await screen.findByText(`${HUMIDIFI_UNLISTED_MARKET} is not a HumidiFi market account`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create scenario' })).toBeDisabled();
+  });
+
+  it("refuses a price too small for the market's decimals", async () => {
+    renderDialog();
+
+    const price = await screen.findByLabelText('Price of SOL in USDC');
+    fireEvent.change(price, { target: { value: '0.0000000000001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create scenario' }));
+
+    expect(await screen.findByText("Price is too small for this market's decimals")).toBeInTheDocument();
     expect(createScenarioMock).not.toHaveBeenCalled();
   });
 });
