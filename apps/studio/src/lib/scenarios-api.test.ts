@@ -584,6 +584,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('USDC vault 3RWFAQBRkNGq7CMGcTLK3kXDgFTe9jgMeFYqk8nHwcWh');
   });
 
+  it('adds the featured SolFi account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['solfi']));
+
+    expect(result).toContain('GhFfLFSprPpfoRaWakPMmJTMJBHuz6C694jYwxy2dAic');
+    expect(result).toContain('USDC vault');
+  });
+
   it('adds the featured BisonFi market addresses', () => {
     const result = buildAiPrompt('set SOL/USDC depth to 3 SOL and 5 USDC', new Set(['bisonfi']));
 

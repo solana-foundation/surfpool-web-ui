@@ -9,6 +9,7 @@ describe('PROTOCOLS', () => {
     expect(ids).toContain('jupiter');
     expect(ids).toContain('raydium');
     expect(ids).toContain('humidifi');
+    expect(ids).toContain('solfi');
     expect(ids).toContain('bisonfi');
   });
 
@@ -25,6 +26,7 @@ describe('PROTOCOL_ICONS', () => {
   it('maps protocol IDs to icon paths', () => {
     expect(PROTOCOL_ICONS['pyth']).toBe('/assets/pyth.svg');
     expect(PROTOCOL_ICONS['jupiter']).toBe('/assets/jupiter.svg');
+    expect(PROTOCOL_ICONS['solfi']).toBe('/assets/solfi-badged.png');
     expect(PROTOCOL_ICONS['bisonfi']).toBe('/assets/bisonfi.svg');
     expect(PROTOCOL_ICONS['phoenix-eternal']).toBe('/assets/phoenix.svg');
     expect(PROTOCOL_ICONS['humidifi']).toBe('/assets/humidifi.svg');
@@ -38,6 +40,7 @@ describe('PROTOCOL_ICONS', () => {
 describe('getProtocolIcon', () => {
   it('returns icon for known protocol', () => {
     expect(getProtocolIcon('pyth')).toBe('/assets/pyth.svg');
+    expect(getProtocolIcon('solfi')).toBe('/assets/solfi-badged.png');
     expect(getProtocolIcon('phoenix-eternal')).toBe('/assets/phoenix.svg');
     expect(getProtocolIcon('humidifi')).toBe('/assets/humidifi.svg');
   });
