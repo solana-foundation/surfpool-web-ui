@@ -97,6 +97,7 @@ describe('AIHeader', () => {
     expect(screen.getByText('SolFi Risk-Off')).toBeInTheDocument();
     expect(screen.getByText('Cross-Pair Arbitrage')).toBeInTheDocument();
     expect(screen.getByText('Phoenix Price Shock')).toBeInTheDocument();
+    expect(screen.getByText('PMM Arbitrage')).toBeInTheDocument();
   });
 
   it('renders example scenarios in a two-row scroller without a native scrollbar', () => {

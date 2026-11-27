@@ -577,6 +577,13 @@ describe('buildAiPrompt', () => {
     expect(result).toContain('Use only these protocols: Pyth, Raydium.');
   });
 
+  it('adds the featured GoonFi account addresses', () => {
+    const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['goonfi']));
+
+    expect(result).toContain('oracle 7yecFG22heommABQ5svcbQLK1Ua4ZrJsHPiktZ17jfm3');
+    expect(result).toContain('USDC vault EunHLeqeJKvxnCPQSytnBP63HJVk2fbHceiKKpngyAo8');
+  });
+
   it('adds the featured SolFi account addresses', () => {
     const result = buildAiPrompt('set the SOL/USDC USDC vault to 5 USDC', new Set(['solfi']));
 

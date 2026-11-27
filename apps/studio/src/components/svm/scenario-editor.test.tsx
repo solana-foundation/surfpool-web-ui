@@ -1,3 +1,4 @@
+import { GOONFI_FEATURED_MARKETS } from '@/lib/pmms/goonfi';
 import { fetchDynamicRefOptions } from '@/lib/scenarios-api';
 import { comboboxResults } from '@/test-utils';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -409,6 +410,41 @@ it('steps forward to the slot after the processed one, which surfnet reads ahead
       .find((body) => body.method === 'surfnet_timeTravel');
     expect(travel?.params).toEqual([{ absoluteSlot: 664 }]);
   });
+});
+
+it('fills the oracle input of a GoonFi vault override from the featured market and saves it', async () => {
+  const template = {
+    id: 'goonfi-vault-balance',
+    name: 'GoonFi vault balance',
+    protocol: 'GoonFi',
+    description: 'Limit a payout vault',
+    rawLayout: true,
+    address: { pubkey: '' },
+    properties: [
+      { path: 'amount', offset: 64, encoding: 'u64' },
+      { path: 'oracle', type: 'input', value_type: 'pubkey' },
+    ],
+  };
+  const [sol] = GOONFI_FEATURED_MARKETS;
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (url.endsWith('/templates') ? [template] : { result: { value: null } }),
+  }));
+  renderEditor({ ...stepAction(template, { pubkey: '' }), protocolId: 'goonfi', protocol: 'GoonFi' });
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  fireEvent.click(await screen.findByTitle(`GoonFi: ${template.name}`));
+  fireEvent.click(await screen.findByText(template.name));
+
+  fireEvent.click(
+    within(await screen.findByLabelText('GoonFi vault results')).getByRole('button', {
+      name: /^SOL \/ USDC \(USDC vault\)/,
+    })
+  );
+  await waitFor(() => expect(screen.getByPlaceholderText('Enter oracle...')).toHaveValue(sol.oracle));
+
+  const override = await savedOverride();
+  expect(override.account).toEqual({ pubkey: sol.quoteVault });
+  expect(override.values).toEqual({ oracle: sol.oracle });
 });
 
 it('keeps a saved SolFi account and its values without loading the account', async () => {

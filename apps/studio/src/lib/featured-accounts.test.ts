@@ -6,13 +6,25 @@ import {
   resolveFeaturedAccount,
 } from './featured-accounts';
 import { BISONFI_FEATURED_MARKETS } from './pmms/bisonfi';
+import { GOONFI_FEATURED_MARKETS } from './pmms/goonfi';
 import { SOLFI_FEATURED_MARKETS } from './pmms/solfi';
 
 const [sol, usdt] = SOLFI_FEATURED_MARKETS;
+const [goonSol, hype] = GOONFI_FEATURED_MARKETS;
 const [bisonSol] = BISONFI_FEATURED_MARKETS;
 const values = (templateId: string) => getFeaturedAccounts(templateId)?.options.map((option) => option.value);
 
 describe('getFeaturedAccounts', () => {
+  it('offers each GoonFi template the account kind it writes', () => {
+    const markets = GOONFI_FEATURED_MARKETS.map((market) => market.market);
+    expect(values('goonfi-reference-band')).toEqual(markets);
+    expect(values('goonfi-size-impact')).toEqual(markets);
+    expect(values('goonfi-price')).toEqual(GOONFI_FEATURED_MARKETS.map((market) => market.oracle));
+    expect(values('goonfi-vault-balance')).toEqual(
+      GOONFI_FEATURED_MARKETS.flatMap((market) => [market.baseVault, market.quoteVault])
+    );
+  });
+
   it('offers each SolFi template the account kind it writes', () => {
     const markets = SOLFI_FEATURED_MARKETS.map((market) => market.market);
     expect(values('solfi-size-impact')).toEqual(markets);
@@ -34,6 +46,10 @@ describe('getFeaturedAccounts', () => {
 
   it("saves the picked account for a featured template and keeps other templates' addresses", () => {
     const pda = { pda: { programId: 'program', seeds: [] } };
+    expect(resolveFeaturedAccount('goonfi-price', { pubkey: '' }, ` ${goonSol.oracle} `)).toEqual({
+      pubkey: goonSol.oracle,
+    });
+    expect(resolveFeaturedAccount('goonfi-size-impact', { pubkey: '' }, '   ')).toBeUndefined();
     expect(resolveFeaturedAccount('solfi-price', { pubkey: '' }, ` ${sol.oracle} `)).toEqual({ pubkey: sol.oracle });
     expect(resolveFeaturedAccount('solfi-size-impact', { pubkey: '' }, '   ')).toBeUndefined();
     expect(resolveFeaturedAccount('bisonfi-spread', { pubkey: '' }, ` ${bisonSol.market} `)).toEqual({
@@ -46,11 +62,17 @@ describe('getFeaturedAccounts', () => {
 
 describe('featuredAccountInputs', () => {
   it("fills the oracle of a featured market or vault's market", () => {
+    expect(featuredAccountInputs('goonfi-reference-band', hype.market)).toEqual({ oracle: hype.oracle });
+    expect(featuredAccountInputs('goonfi-vault-balance', goonSol.baseVault)).toEqual({ oracle: goonSol.oracle });
     expect(featuredAccountInputs('solfi-size-impact', usdt.market)).toEqual({ oracle: usdt.oracle });
     expect(featuredAccountInputs('solfi-vault-balance', sol.quoteVault)).toEqual({ oracle: sol.oracle });
   });
 
   it('clears the oracle for a typed account and fills nothing for a template whose accounts name none', () => {
+    expect(featuredAccountInputs('goonfi-size-impact', '9NkuAWB4LgCVFV77omEkJEjXqgV5PGupwMTu3B3pBRhc')).toEqual({
+      oracle: undefined,
+    });
+    expect(featuredAccountInputs('goonfi-price', goonSol.oracle)).toEqual({});
     expect(featuredAccountInputs('solfi-size-impact', '9NkuAWB4LgCVFV77omEkJEjXqgV5PGupwMTu3B3pBRhc')).toEqual({
       oracle: undefined,
     });
@@ -65,6 +87,7 @@ describe('featuredAccountInputs', () => {
 
 describe('getProtocolAiContext', () => {
   it("returns a registered protocol's context and nothing for any other protocol", () => {
+    expect(getProtocolAiContext('goonfi')).toContain(goonSol.oracle);
     expect(getProtocolAiContext('solfi')).toContain(sol.quoteVault);
     expect(getProtocolAiContext('bisonfi')).toContain(bisonSol.market);
     expect(getProtocolAiContext('kamino')).toBeUndefined();
